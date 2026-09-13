@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { UserCircle, MapPin, Wrench, Briefcase, Navigation, Sprout } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -67,27 +69,31 @@ export default function Profile() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/profile/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: user.id,
-          name,
-          location,
-          skills: user.role === 'laborer' ? skills : undefined,
-          experience: user.role === 'laborer' ? experience : undefined,
-          age: user.role === 'laborer' ? age : undefined,
-          farmSize: user.role === 'farmer' ? farmSize : undefined,
-          crops: user.role === 'farmer' ? crops : undefined,
-        })
-      });
-      const data = await res.json();
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
-        navigate('/dashboard');
-      }
+      const updatedData = {
+        name,
+        location,
+        skills: user.role === 'laborer' ? skills : undefined,
+        experience: user.role === 'laborer' ? experience : undefined,
+        age: user.role === 'laborer' ? age : undefined,
+        farmSize: user.role === 'farmer' ? farmSize : undefined,
+        crops: user.role === 'farmer' ? crops : undefined,
+        profileCompleted: true
+      };
+
+      // Clean undefined keys
+      Object.keys(updatedData).forEach(key => (updatedData as any)[key] === undefined && delete (updatedData as any)[key]);
+
+      // Update Firestore
+      const userRef = doc(db, 'users', user.id);
+      await updateDoc(userRef, updatedData);
+
+      // Update local storage
+      const finalUser = { ...user, ...updatedData };
+      localStorage.setItem('user', JSON.stringify(finalUser));
+      navigate('/dashboard');
     } catch (err) {
       console.error(err);
+      alert('Error saving profile to Firebase');
     } finally {
       setLoading(false);
     }

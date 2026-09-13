@@ -1,12 +1,19 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Sprout, UserCircle, LogOut } from 'lucide-react';
+import { auth } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 
 export default function Navbar() {
   const navigate = useNavigate();
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Error signing out: ", error);
+    }
     localStorage.removeItem('user');
     navigate('/');
   };

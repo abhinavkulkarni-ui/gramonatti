@@ -1,15 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Sprout } from 'lucide-react';
+import { auth, db } from '../lib/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup, 
+  GoogleAuthProvider 
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function Login() {
-  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('laborer');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isLogin, setIsLogin] = useState(true);
   const navigate = useNavigate();
+
+  const handleAuthSuccess = async (userCredential: any, selectedRole: string) => {
+    const user = userCredential.user;
+    
+    // Check if user document exists in Firestore
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef);
+    
+    let userData;
+    if (userSnap.exists()) {
+      userData = userSnap.data();
+    } else {
+      // Create new user document
+      userData = {
+        id: user.uid,
+        name: user.displayName || 'New User',
+        email: user.email,
+        role: selectedRole,
+        phone: user.phoneNumber || 'Not provided',
+        location: 'Unknown',
+        profileCompleted: false,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(userRef, userData);
+    }
+    
+    localStorage.setItem('user', JSON.stringify(userData));
+    if (!userData.profileCompleted) {
+      navigate('/profile');
+    } else {
+      navigate('/dashboard');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,72 +59,33 @@ export default function Login() {
     setError('');
     
     try {
-      const res = await fetch('/api/auth/phone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, password, role })
-      });
-      const data = await res.json();
-      
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
-        if (!data.user.profileCompleted) {
-          navigate('/profile');
-        } else {
-          navigate('/dashboard');
-        }
+      if (isLogin) {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        await handleAuthSuccess(userCredential, role);
       } else {
-        setError(data.error || 'Authentication failed');
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await handleAuthSuccess(userCredential, role);
       }
-    } catch (err) {
-      setError('Network error. Please try again.');
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const response = await fetch('/api/auth/google/url');
-      const { url } = await response.json();
-      const authWindow = window.open(url, 'oauth_popup', 'width=600,height=700');
-      if (!authWindow) {
-        alert('Please allow popups for this site to connect your account.');
-      }
-    } catch (error) {
-      console.error('OAuth URL fetch error:', error);
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      await handleAuthSuccess(userCredential, role);
+    } catch (err: any) {
+      setError(err.message || 'Google authentication failed.');
+    } finally {
+      setLoading(false);
     }
   };
-
-  useEffect(() => {
-    const handleMessage = async (event: MessageEvent) => {
-      // Allow messages from localhost and run.app for OAuth
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
-        return;
-      }
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        const payload = event.data.payload;
-        try {
-          const res = await fetch('/api/auth/google/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json();
-          if (data.user) {
-            localStorage.setItem('user', JSON.stringify(data.user));
-            if (!data.user.profileCompleted) navigate('/profile');
-            else navigate('/dashboard');
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [navigate]);
 
   return (
     <div className="min-h-screen pt-16 flex items-center justify-center bg-green-50 px-4">
@@ -112,7 +115,8 @@ export default function Login() {
         <button
           onClick={handleGoogleLogin}
           type="button"
-          className="w-full flex items-center justify-center gap-2 bg-white border border-gray-300 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-50 transition mb-6 shadow-sm"
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 bg-white border border-gray-300 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-50 transition mb-6 shadow-sm disabled:opacity-50"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -131,13 +135,13 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-green-900 mb-1">Phone Number</label>
+            <label className="block text-sm font-medium text-green-900 mb-1">Email Address</label>
             <input 
-              type="tel" 
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              type="email" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 rounded-xl border border-green-200 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition"
-              placeholder="e.g. 9876543210"
+              placeholder="e.g. user@example.com"
               required
             />
           </div>
@@ -179,9 +183,19 @@ export default function Login() {
             disabled={loading}
             className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-medium transition shadow-lg shadow-green-600/20 disabled:opacity-70 flex justify-center"
           >
-            {loading ? <div className="h-6 w-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Continue with Phone'}
+            {loading ? <div className="h-6 w-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : (isLogin ? 'Sign In' : 'Create Account')}
           </button>
         </form>
+
+        <div className="mt-8 text-center text-sm text-green-700">
+          {isLogin ? "Don't have an account? " : "Already have an account? "}
+          <button 
+            onClick={() => setIsLogin(!isLogin)} 
+            className="font-semibold text-green-600 hover:text-green-800 transition"
+          >
+            {isLogin ? 'Sign up' : 'Log in'}
+          </button>
+        </div>
       </motion.div>
     </div>
   );

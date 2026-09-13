@@ -67,7 +67,18 @@ export default function Login() {
         await handleAuthSuccess(userCredential, role);
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please try again.');
+      console.error("Auth Error:", err);
+      if (err.code === 'permission-denied') {
+        setError('Firestore permission denied. Please update your Firestore Security Rules to allow read/write.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('This sign-in method is disabled. Please enable it in the Firebase Console (Authentication > Sign-in method).');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized. Add it to Firebase Console (Authentication > Settings > Authorized domains).');
+      } else if (err.code === 'auth/invalid-credential') {
+        setError('Invalid email or password.');
+      } else {
+        setError(err.message || 'Authentication failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -81,7 +92,18 @@ export default function Login() {
       const userCredential = await signInWithPopup(auth, provider);
       await handleAuthSuccess(userCredential, role);
     } catch (err: any) {
-      setError(err.message || 'Google authentication failed.');
+      console.error("Google Auth Error:", err);
+      if (err.code === 'permission-denied') {
+        setError('Firestore permission denied. Please update your Firestore Security Rules.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Google sign-in is disabled in Firebase Console.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized in Firebase Console.');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in popup was closed.');
+      } else {
+        setError(err.message || 'Google authentication failed.');
+      }
     } finally {
       setLoading(false);
     }

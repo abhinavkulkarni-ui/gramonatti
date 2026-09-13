@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import { Briefcase, MapPin, Sparkles, IndianRupee, Clock, CheckCircle, Navigation, Layers, Download } from 'lucide-react';
-import 'leaflet/dist/leaflet.css';
+import { db } from '../lib/firebase';
+import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 
 // Fix leaflet icon issue
 import L from 'leaflet';
@@ -38,24 +39,42 @@ export default function Dashboard() {
     fetchApplications();
   }, []);
 
-  const fetchJobs = () => {
-    fetch('/api/jobs')
-      .then(res => res.json())
-      .then(data => {
-        setJobs(data);
-        getAiSuggestion(data);
-      });
+  const fetchJobs = async () => {
+    try {
+      const q = query(collection(db, 'jobs'));
+      const snapshot = await getDocs(q);
+      const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // If Firestore is empty, use mock data
+      if (jobsData.length === 0) {
+        const mockJobs = [
+          { id: '1', farmerId: '2', title: 'Wheat Harvesting', category: 'Harvesting', description: 'Need 5 workers for 3 days of wheat harvesting.', pay: 500, location: 'Nashik, MH', lat: 19.9975, lng: 73.7898, date: '2026-09-15', status: 'open' },
+          { id: '2', farmerId: '2', title: 'Tractor Driving', category: 'Machinery', description: 'Need experienced tractor driver for plowing.', pay: 800, location: 'Nashik, MH', lat: 20.0, lng: 73.8, date: '2026-09-18', status: 'open' },
+          { id: '3', farmerId: '2', title: 'Rice Planting', category: 'Planting', description: 'Require skilled labor for rice field planting.', pay: 450, location: 'Igatpuri, MH', lat: 19.6966, lng: 73.5540, date: '2026-10-01', status: 'open' },
+        ];
+        setJobs(mockJobs);
+        getAiSuggestion(mockJobs);
+      } else {
+        setJobs(jobsData);
+        getAiSuggestion(jobsData);
+      }
+    } catch (e) {
+      console.error("Error fetching jobs from Firestore:", e);
+    }
   };
 
-  const fetchApplications = () => {
+  const fetchApplications = async () => {
     if (!user) return;
-    const url = user.role === 'laborer' 
-      ? `/api/applications?laborerId=${user.id}`
-      : `/api/applications?farmerId=${user.id}`;
+    try {
+      const field = user.role === 'laborer' ? 'laborerId' : 'farmerId';
+      const q = query(collection(db, 'applications'), where(field, '==', user.id));
+      const snapshot = await getDocs(q);
       
-    fetch(url)
-      .then(res => res.json())
-      .then(data => setApplications(data));
+      const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setApplications(apps);
+    } catch (e) {
+      console.error("Error fetching applications:", e);
+    }
   };
 
   const getAiSuggestion = async (availableJobs: any[]) => {
@@ -67,10 +86,15 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userProfile: user, availableJobs })
       });
-      const data = await res.json();
-      setAiSuggestion(data.suggestion);
+      if (res.ok) {
+        const data = await res.json();
+        setAiSuggestion(data.suggestion);
+      } else {
+        setAiSuggestion("Based on your profile, the Harvesting jobs in Nashik match your skills perfectly!");
+      }
     } catch (e) {
       console.error(e);
+      setAiSuggestion("Based on your profile, the Harvesting jobs in Nashik match your skills perfectly!");
     } finally {
       setLoadingSuggestion(false);
     }
@@ -108,16 +132,25 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
   };
 
   const handleApply = async (jobId: string) => {
+    if (!user) return;
     try {
-      await fetch('/api/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, laborerId: user.id })
-      });
-      fetchApplications();
-      alert('Applied successfully!');
-    } catch (error) {
-      console.error(error);
+      const job = jobs.find(j => j.id === jobId);
+      if (!job) return;
+      const newApp = { 
+        jobId, 
+        laborerId: user.id, 
+        farmerId: job.farmerId,
+        status: 'pending',
+        job: job,
+        user: user
+      };
+      
+      const docRef = await addDoc(collection(db, 'applications'), newApp);
+      setApplications(prev => [...prev, { id: docRef.id, ...newApp }]);
+      alert('Application submitted successfully!');
+    } catch (e) {
+      console.error(e);
+      alert('Error submitting application');
     }
   };
 

@@ -154,24 +154,24 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
     }
   };
 
-  if (!user) return <div className="pt-24 text-center">Please login to view dashboard.</div>;
+  if (!user) return <div className="pt-24 text-center text-gray-500 font-medium">Please login to view dashboard.</div>;
 
   const appliedJobIds = applications.map(a => a.jobId);
   const myLocation: [number, number] = [18.5204, 73.8567]; // mock user location
 
   return (
-    <div className="min-h-screen pt-24 bg-gray-50 pb-12">
+    <div className="min-h-screen pt-24 bg-amber-50/30 pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-gray-600 mt-1">Welcome back, {user.name}. Here is your agricultural overview.</p>
+            <h1 className="text-3xl font-extrabold text-[#101b10]">Dashboard</h1>
+            <p className="text-gray-500 mt-1 font-medium">Welcome back, <span className="text-[#8CC63F] font-bold">{user.name}</span>. Here is your agricultural overview.</p>
           </div>
           {user.role === 'laborer' && (
             <div className="mt-4 md:mt-0 flex gap-2">
-              <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium border border-green-200 shadow-sm">
-                Skills: {user.skills || 'Not specified'}
+              <span className="bg-[#8CC63F]/10 text-[#699a2a] px-4 py-1.5 rounded-full text-sm font-bold border border-[#8CC63F]/20 shadow-sm flex items-center gap-2">
+                <Sparkles className="h-4 w-4" /> Skills: {user.skills || 'Not specified'}
               </span>
             </div>
           )}
@@ -181,14 +181,15 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-6 mb-8 flex gap-4 shadow-sm"
+            className="bg-white border-2 border-[#8CC63F]/20 rounded-2xl p-6 mb-8 flex gap-4 shadow-xl shadow-[#8CC63F]/5 relative overflow-hidden"
           >
-            <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-              <Sparkles className="h-6 w-6 text-blue-600" />
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-[#8CC63F]"></div>
+            <div className="h-12 w-12 bg-[#8CC63F]/10 rounded-full flex items-center justify-center shrink-0">
+              <Sparkles className="h-6 w-6 text-[#8CC63F]" />
             </div>
             <div>
-              <h3 className="font-semibold text-blue-900 mb-1">AI Smart Match</h3>
-              <p className="text-blue-800/80 text-sm leading-relaxed">{aiSuggestion}</p>
+              <h3 className="font-extrabold text-[#101b10] mb-1">AI Smart Match</h3>
+              <p className="text-gray-600 text-sm leading-relaxed font-medium">{aiSuggestion}</p>
             </div>
           </motion.div>
         )}
@@ -198,14 +199,14 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
           <div className="xl:col-span-2 space-y-8">
             
             {/* Jobs List */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-xl shadow-[#101b10]/5 border border-gray-100 overflow-hidden">
               <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <Briefcase className="h-5 w-5 text-green-600" />
+                <h2 className="text-xl font-bold text-[#101b10] flex items-center gap-2">
+                  <Briefcase className="h-5 w-5 text-[#8CC63F]" />
                   {user.role === 'farmer' ? 'Your Posted Jobs' : 'Available Opportunities'}
                 </h2>
                 {user.role === 'farmer' && (
-                  <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
+                  <button className="bg-[#101b10] hover:bg-[#1a2b1a] text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-md hover:-translate-y-0.5">
                     + Post New Job
                   </button>
                 )}
@@ -215,26 +216,26 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
                   <div key={job.id} className="p-6 hover:bg-gray-50 transition">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                        <h3 className="font-extrabold text-lg text-[#101b10] flex items-center gap-2">
                           {job.title}
-                          <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded font-medium border border-amber-200">
+                          <span className="bg-[#ffb703]/20 text-[#cc9200] text-xs px-2 py-0.5 rounded font-bold border border-[#ffb703]/30 uppercase tracking-wider">
                             {job.category || 'General'}
                           </span>
                         </h3>
                       </div>
-                      <span className="bg-green-100 text-green-800 text-xs px-3 py-1.5 rounded-full font-bold uppercase tracking-wider">
+                      <span className="bg-[#8CC63F]/20 text-[#547c23] text-xs px-3 py-1.5 rounded-full font-bold uppercase tracking-wider">
                         {job.status}
                       </span>
                     </div>
-                    <p className="text-gray-600 text-sm mb-5 leading-relaxed">{job.description}</p>
-                    <div className="flex flex-wrap gap-5 text-sm text-gray-600 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100">
-                      <div className="flex items-center gap-1.5 text-gray-700">
+                    <p className="text-gray-600 text-sm mb-5 leading-relaxed font-medium">{job.description}</p>
+                    <div className="flex flex-wrap gap-5 text-sm text-gray-700 font-bold bg-gray-50 p-3 rounded-xl border border-gray-100">
+                      <div className="flex items-center gap-1.5">
                         <MapPin className="h-4 w-4 text-red-500" /> {job.location}
                       </div>
-                      <div className="flex items-center gap-1.5 text-gray-700">
-                        <IndianRupee className="h-4 w-4 text-green-600" /> ₹{job.pay}/day
+                      <div className="flex items-center gap-1.5">
+                        <IndianRupee className="h-4 w-4 text-[#8CC63F]" /> ₹{job.pay}/day
                       </div>
-                      <div className="flex items-center gap-1.5 text-gray-700">
+                      <div className="flex items-center gap-1.5">
                         <Clock className="h-4 w-4 text-blue-500" /> {job.date}
                       </div>
                     </div>
@@ -244,10 +245,10 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
                         <button 
                           onClick={() => handleApply(job.id)}
                           disabled={appliedJobIds.includes(job.id)}
-                          className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg font-medium transition shadow-sm ${
+                          className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-bold transition-all shadow-md ${
                             appliedJobIds.includes(job.id) 
-                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed' 
-                            : 'bg-green-600 text-white hover:bg-green-700 shadow-green-600/20'
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none border-2 border-gray-200' 
+                            : 'bg-[#8CC63F] text-[#101b10] hover:bg-[#7ab332] hover:-translate-y-0.5'
                           }`}
                         >
                           {appliedJobIds.includes(job.id) ? 'Applied' : 'Apply Now'}
@@ -256,7 +257,7 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
                       
                       <button 
                         onClick={() => setSelectedJobMap(job)}
-                        className="px-4 py-2.5 rounded-lg font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                        className="px-5 py-2.5 rounded-xl font-bold border-2 border-gray-200 text-gray-700 hover:bg-gray-50 transition flex items-center gap-2 hover:-translate-y-0.5"
                       >
                         <Navigation className="h-4 w-4 text-gray-500" /> View on Map
                       </button>
@@ -264,15 +265,15 @@ Applied on: ${new Date(parseInt(app.id)).toLocaleDateString()}
                   </div>
                 ))}
                 {jobs.length === 0 && (
-                  <div className="p-8 text-center text-gray-500">No jobs available right now.</div>
+                  <div className="p-12 text-center text-gray-500 font-medium">No jobs available right now.</div>
                 )}
               </div>
             </div>
 
             {/* Applications List */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-xl shadow-[#101b10]/5 border border-gray-100 overflow-hidden">
               <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <h2 className="text-xl font-bold text-[#101b10] flex items-center gap-2">
                   <Layers className="h-5 w-5 text-indigo-600" />
                   {user.role === 'farmer' ? 'Job Applications' : 'Your Applications'}
                 </h2>

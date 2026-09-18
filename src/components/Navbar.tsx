@@ -96,10 +96,10 @@ export default function Navbar() {
                   Sign In
                 </Link>
                 <Link
-                  to="/login"
+                  to="/login?mode=signup"
                   className="inline-flex items-center gap-2 bg-gradient-to-r from-[#14532d] via-[#166534] to-[#15803d] hover:brightness-110 text-white px-5 py-2.5 rounded-full text-sm font-semibold transition shadow-md hover:shadow-lg hover:-translate-y-0.5"
                 >
-                  <span>Quick Login</span>
+                  <span>Register</span>
                   <ArrowRight className="h-3.5 w-3.5 text-[#fde047]" />
                 </Link>
               </div>

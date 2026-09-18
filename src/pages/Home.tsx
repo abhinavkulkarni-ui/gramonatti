@@ -35,13 +35,26 @@ export default function Home() {
   };
 
   const tickerRates = [
-    { crop: 'Sharbati Gold Wheat', price: '₹3,200/Q', change: '+1.8%', up: true },
-    { crop: 'Desi Hybrid Bajra', price: '₹2,600/Q', change: '+2.4%', up: true },
-    { crop: 'Maldandi Jowar', price: '₹4,200/Q', change: '+0.9%', up: true },
-    { crop: 'Yellow Soybean', price: '₹4,800/Q', change: '+3.1%', up: true },
-    { crop: 'Organic BT Cotton', price: '₹7,400/Q', change: '+1.5%', up: true },
-    { crop: 'Marathwada Toor Dal', price: '₹11,500/Q', change: '+2.8%', up: true },
-    { crop: 'Nashik Red Onion', price: '₹2,200/Q', change: '-0.5%', up: false }
+    { crop: 'Sharbati Gold Wheat', price: '₹3,200/Q', change: '+1.8%', up: true, mandi: 'Nashik' },
+    { crop: 'Lokwan Milling Wheat', price: '₹2,950/Q', change: '+1.2%', up: true, mandi: 'Baramati' },
+    { crop: 'Desi Hybrid Bajra', price: '₹2,600/Q', change: '+2.4%', up: true, mandi: 'Pune' },
+    { crop: 'Maldandi M-35 Jowar', price: '₹4,200/Q', change: '+0.9%', up: true, mandi: 'Solapur' },
+    { crop: 'White Sorghum (Jowar)', price: '₹3,850/Q', change: '+1.4%', up: true, mandi: 'Latur' },
+    { crop: 'Yellow Soybean (JS-335)', price: '₹4,850/Q', change: '+3.1%', up: true, mandi: 'Latur' },
+    { crop: 'Marathwada Toor Dal', price: '₹11,500/Q', change: '+2.8%', up: true, mandi: 'Akola' },
+    { crop: 'Desi Chana (Bengal Gram)', price: '₹6,400/Q', change: '+1.6%', up: true, mandi: 'Nanded' },
+    { crop: 'Green Moong Whole', price: '₹8,900/Q', change: '+2.1%', up: true, mandi: 'Jalna' },
+    { crop: 'Black Urad Dal', price: '₹9,250/Q', change: '+1.5%', up: true, mandi: 'Nagpur' },
+    { crop: 'Yellow Hybrid Maize', price: '₹2,350/Q', change: '+0.8%', up: true, mandi: 'Nashik' },
+    { crop: '1121 Basmati Paddy', price: '₹4,450/Q', change: '+2.5%', up: true, mandi: 'Gondia' },
+    { crop: 'Wada Kolam Rice', price: '₹3,650/Q', change: '+1.1%', up: true, mandi: 'Palghar' },
+    { crop: 'Black Mustard Seed (Rai)', price: '₹5,650/Q', change: '+1.9%', up: true, mandi: 'Dhule' },
+    { crop: 'Oilseed Groundnut', price: '₹6,800/Q', change: '+2.2%', up: true, mandi: 'Kolhapur' },
+    { crop: 'Sunflower Oilseeds', price: '₹4,750/Q', change: '+0.7%', up: true, mandi: 'Beed' },
+    { crop: 'Organic BT Cotton (Kapas)', price: '₹7,450/Q', change: '+1.5%', up: true, mandi: 'Yavatmal' },
+    { crop: 'Nashik Red Onion', price: '₹2,200/Q', change: '-0.5%', up: false, mandi: 'Lasalgaon' },
+    { crop: 'Kolhapur Desi Gur (Jaggery)', price: '₹4,100/Q', change: '+1.3%', up: true, mandi: 'Kolhapur' },
+    { crop: 'Salem Polished Turmeric', price: '₹14,200/Q', change: '+4.2%', up: true, mandi: 'Sangli' }
   ];
 
   const featuredProduce = [
@@ -102,26 +115,46 @@ export default function Home() {
       <div className="absolute top-20 left-1/4 w-[500px] h-[500px] bg-emerald-200/25 rounded-full blur-3xl pointer-events-none animate-float-slow"></div>
       <div className="absolute top-96 right-10 w-[450px] h-[450px] bg-amber-200/30 rounded-full blur-3xl pointer-events-none animate-pulse-glow"></div>
 
-      {/* 1. REAL-TIME APMC COMMODITY TICKER */}
-      <div className="bg-[#122619] border-b border-[#24452f] text-xs py-2.5 px-4 overflow-hidden relative z-20 shadow-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-[#8CC63F] font-bold shrink-0 uppercase tracking-wider text-[11px]">
+      {/* 1. CONTINUOUS FLOATING APMC COMMODITY TICKER */}
+      <div className="bg-[#122619] border-b border-[#24452f] text-xs py-2.5 px-3 sm:px-4 overflow-hidden relative z-20 shadow-xs">
+        <div className="max-w-7xl mx-auto flex items-center gap-4">
+          <div className="flex items-center gap-2 text-[#8CC63F] font-bold shrink-0 uppercase tracking-wider text-[11px] bg-[#122619] pr-3 z-10 border-r border-[#24452f]">
             <span className="h-2 w-2 rounded-full bg-[#8CC63F] animate-pulse"></span>
-            <span>Live APMC Mandi Rates:</span>
+            <span className="hidden sm:inline">Live Mandi Stream:</span>
+            <span className="sm:hidden">Mandi:</span>
           </div>
-          <div className="flex items-center gap-6 overflow-x-auto no-scrollbar py-0.5 text-white/90">
-            {tickerRates.map((t, idx) => (
-              <div key={idx} className="flex items-center gap-2 shrink-0 text-[11px] sm:text-xs">
-                <span className="font-semibold text-white">{t.crop}</span>
-                <span className="font-mono text-[#8CC63F] font-bold">{t.price}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${t.up ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'}`}>
-                  {t.change}
-                </span>
-              </div>
-            ))}
+
+          {/* Floating Continuous Moving Track */}
+          <div className="flex-1 overflow-hidden ticker-fade-mask relative">
+            <div className="animate-floating-ticker flex items-center gap-6 py-0.5">
+              {/* First loop of grains */}
+              {tickerRates.map((t, idx) => (
+                <div key={`track-a-${idx}`} className="flex items-center gap-2 shrink-0 text-[11px] sm:text-xs bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full border border-white/10 transition">
+                  <span className="font-semibold text-white">{t.crop}</span>
+                  <span className="text-[10px] text-gray-400">({t.mandi})</span>
+                  <span className="font-mono text-[#8CC63F] font-bold">{t.price}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${t.up ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'}`}>
+                    {t.change}
+                  </span>
+                </div>
+              ))}
+
+              {/* Seamless duplicate loop for endless smooth floating */}
+              {tickerRates.map((t, idx) => (
+                <div key={`track-b-${idx}`} className="flex items-center gap-2 shrink-0 text-[11px] sm:text-xs bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full border border-white/10 transition">
+                  <span className="font-semibold text-white">{t.crop}</span>
+                  <span className="text-[10px] text-gray-400">({t.mandi})</span>
+                  <span className="font-mono text-[#8CC63F] font-bold">{t.price}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${t.up ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'}`}>
+                    {t.change}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-          <Link to="/marketplace" className="shrink-0 hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-[#8CC63F] hover:underline">
-            All Crops →
+
+          <Link to="/marketplace" className="shrink-0 hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-[#8CC63F] hover:underline bg-[#122619] pl-3 z-10 border-l border-[#24452f]">
+            All Mandis →
           </Link>
         </div>
       </div>

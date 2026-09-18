@@ -33,13 +33,18 @@ import {
   DollarSign,
   AlertCircle,
   CreditCard,
-  BadgeCheck
+  BadgeCheck,
+  RefreshCw,
+  Mail
 } from 'lucide-react';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
+import { sendEmailVerification } from 'firebase/auth';
 import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import { Job, JobApplication, FarmProduct, ProductOrder, UserProfile } from '../types';
 import OnboardingModal from '../components/OnboardingModal';
 import RuralRiseLogo from '../components/RuralRiseLogo';
+import DestinationMapModal from '../components/DestinationMapModal';
+import { exportProfileToPdf } from '../lib/pdfExport';
 
 // Fix Leaflet icons
 import L from 'leaflet';
@@ -76,6 +81,7 @@ export default function Dashboard() {
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [selectedJobMap, setSelectedJobMap] = useState<Job | null>(null);
+  const [activeDestinationJob, setActiveDestinationJob] = useState<Job | null>(null);
   
   // Post Job Modal State
   const [showPostJobModal, setShowPostJobModal] = useState(false);
@@ -98,6 +104,100 @@ export default function Dashboard() {
   const [postingProduce, setPostingProduce] = useState(false);
 
   const [toastMsg, setToastMsg] = useState('');
+
+  // Email Verification State
+  const [verificationDismissed, setVerificationDismissed] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [checkingVerification, setCheckingVerification] = useState(false);
+  const [verificationBannerMsg, setVerificationBannerMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleResendVerificationEmail = async () => {
+    setResendingVerification(true);
+    setVerificationBannerMsg(null);
+    try {
+      if (auth.currentUser) {
+        await sendEmailVerification(auth.currentUser);
+        setVerificationBannerMsg({
+          type: 'success',
+          text: `Verification link has been resent to ${auth.currentUser.email || user?.email}! Please check your email inbox and spam folder.`
+        });
+        showToast('Verification email resent successfully!');
+      } else {
+        setVerificationBannerMsg({
+          type: 'error',
+          text: 'No active authentication session. Please sign in to request email verification.'
+        });
+      }
+    } catch (err: any) {
+      if (err.code === 'auth/too-many-requests') {
+        setVerificationBannerMsg({
+          type: 'error',
+          text: 'Please wait a minute before requesting another verification email.'
+        });
+      } else {
+        setVerificationBannerMsg({
+          type: 'error',
+          text: err.message || 'Unable to send verification email. Please try again.'
+        });
+      }
+    } finally {
+      setResendingVerification(false);
+    }
+  };
+
+  const handleCheckEmailVerified = async () => {
+    if (!user) return;
+    setCheckingVerification(true);
+    setVerificationBannerMsg(null);
+    try {
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+        if (auth.currentUser.emailVerified) {
+          const updatedUser: UserProfile = { ...user, emailVerified: true };
+          setUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+          window.dispatchEvent(new Event('user-profile-updated'));
+
+          // Update local accounts
+          try {
+            const rawAccounts = localStorage.getItem('gramonnati_registered_users');
+            if (rawAccounts) {
+              const accs = JSON.parse(rawAccounts);
+              const key = (auth.currentUser.email || user.email || '').toLowerCase().trim();
+              if (accs[key]) {
+                accs[key].emailVerified = true;
+                localStorage.setItem('gramonnati_registered_users', JSON.stringify(accs));
+              }
+            }
+          } catch (e) {}
+
+          setVerificationBannerMsg({
+            type: 'success',
+            text: 'Your email has been verified! Gramonnati Verified Member status is now active.'
+          });
+          showToast('Email verified! Officially verified badge unlocked.');
+          return;
+        } else {
+          setVerificationBannerMsg({
+            type: 'error',
+            text: `Email is not verified yet. Please open the link sent to ${auth.currentUser.email || user.email}, then click Check Status.`
+          });
+        }
+      } else {
+        setVerificationBannerMsg({
+          type: 'error',
+          text: 'Session expired. Please sign in again.'
+        });
+      }
+    } catch (e) {
+      setVerificationBannerMsg({
+        type: 'error',
+        text: 'Unable to check verification status. Please check your network connection.'
+      });
+    } finally {
+      setCheckingVerification(false);
+    }
+  };
 
   // Fallback / Initial Data
   const defaultMockJobs: Job[] = [
@@ -570,35 +670,8 @@ export default function Dashboard() {
 
   const downloadWorkerDossier = () => {
     if (!user) return;
-    const text = `
-AGRICONNECT GRAMONNATI - VERIFIED AGRICULTURAL WORKER DOSSIER
-=============================================================
-Full Name: ${user.name}
-Role: Agricultural Specialist / Skilled Laborer
-Contact Number: ${user.phone || 'Verified on platform'}
-Base District / Location: ${user.location || 'Pune, Maharashtra'}
-Verified Agricultural Skills: ${user.skills || 'Wheat/Bajra Harvesting, Tractor Handling, Drip Irrigation'}
-Field Experience: ${user.experience || '4'} Years
-Expected Daily Wage: ₹${user.expectedWage || '700'}/day
-Working Radius: ${user.workingRadiusKm || '25'} km
-
-VERIFICATION STATUS:
---------------------
-Aadhaar Linkage: Verified
-APMC Labor Board ID: MH-AGRI-${Math.floor(100000 + Math.random() * 900000)}
-Platform Safety Rating: 4.9 / 5.0 (98% On-time Arrival)
-Issued via AgriConnect Gramonnati Rural Network
-    `.trim();
-
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `AgriConnect_${user.name.replace(/\s+/g, '_')}_Dossier.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    exportProfileToPdf(user);
+    showToast('Verified Gramonnati PDF Profile downloaded successfully!');
   };
 
   if (!user) {
@@ -634,6 +707,7 @@ Issued via AgriConnect Gramonnati Rural Network
       <OnboardingModal 
         user={user}
         isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
         onComplete={(updatedUser) => {
           setUser(updatedUser);
           setShowOnboarding(false);
@@ -641,8 +715,89 @@ Issued via AgriConnect Gramonnati Rural Network
         }}
       />
 
+      {/* In-Site GPS Destination Navigator Modal (Works fully inside site) */}
+      <DestinationMapModal
+        job={activeDestinationJob}
+        isOpen={!!activeDestinationJob}
+        onClose={() => setActiveDestinationJob(null)}
+        userLocation={myLocation}
+      />
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
+        {/* Email Verification Alert Banner (Shows when email is not verified yet) */}
+        {!user.emailVerified && !verificationDismissed && (
+          <div className="mb-6 bg-gradient-to-r from-amber-50 via-amber-50/90 to-emerald-50/50 border border-amber-300 p-4 sm:p-5 rounded-3xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="h-10 w-10 rounded-2xl bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                <Mail className="h-5 w-5 text-amber-700" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-bold text-amber-950 font-serif">
+                    Email Verification Required / Pending
+                  </h4>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
+                    Action Required
+                  </span>
+                </div>
+                <p className="text-xs text-[#4b6051] mt-0.5 max-w-2xl leading-relaxed">
+                  A verification link was dispatched to <strong>{user.email}</strong>. Verifying your email authenticates your account and grants you the official <strong>Gramonnati Verified Member</strong> badge for priority farm labor matching and direct Mandi trade.
+                </p>
+                {verificationBannerMsg && (
+                  <div className={`mt-2 text-xs font-semibold p-2 rounded-xl border flex items-center gap-1.5 ${
+                    verificationBannerMsg.type === 'success' 
+                      ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300' 
+                      : 'bg-amber-100/90 text-amber-950 border-amber-300'
+                  }`}>
+                    {verificationBannerMsg.type === 'success' ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-800 shrink-0" />
+                    )}
+                    <span>{verificationBannerMsg.text}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
+              <button
+                type="button"
+                onClick={handleCheckEmailVerified}
+                disabled={checkingVerification}
+                className="inline-flex items-center gap-1.5 bg-[#14532d] hover:bg-[#0f3d21] text-white px-4 py-2 rounded-full font-bold text-xs transition shadow-xs disabled:opacity-70"
+              >
+                {checkingVerification ? (
+                  <div className="h-3.5 w-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+                )}
+                <span>Check Status</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResendVerificationEmail}
+                disabled={resendingVerification}
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-[#f6faf6] text-amber-950 border border-amber-300 px-3.5 py-2 rounded-full font-bold text-xs transition shadow-xs disabled:opacity-70"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 text-amber-800 ${resendingVerification ? 'animate-spin' : ''}`} />
+                <span>Resend Email</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setVerificationDismissed(true)}
+                className="text-[#647466] hover:text-[#14532d] px-2 py-1 text-xs font-semibold"
+                title="Dismiss banner"
+              >
+                ✕ Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Top Header */}
         <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-[#d8e5da] shadow-xs">
           <div>
@@ -654,9 +809,30 @@ Issued via AgriConnect Gramonnati Rural Network
                 {user.role === 'admin' && 'Gramonnati APMC Mandi Administration Portal'}
               </span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-serif text-[#14532d] tracking-tight font-bold">
-              Welcome back, {user.name}
-            </h1>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-3xl sm:text-4xl font-serif text-[#14532d] tracking-tight font-bold">
+                Welcome back, {user.name}
+              </h1>
+              {user.emailVerified ? (
+                <span 
+                  className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold border border-emerald-300 shadow-xs" 
+                  title="Official Gramonnati Verified Member (Email & Identity Confirmed)"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Verified Member</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setVerificationDismissed(false)}
+                  className="inline-flex items-center gap-1 bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs px-2.5 py-1 rounded-full font-bold border border-amber-300 shadow-xs transition"
+                  title="Email verification pending. Click to verify."
+                >
+                  <Mail className="h-3.5 w-3.5 text-amber-700" />
+                  <span>Verification Pending</span>
+                </button>
+              )}
+            </div>
             <p className="text-[#496552] text-xs sm:text-sm mt-1">
               {user.location} • {user.role === 'farmer' && `${user.farmSize || '15.4'} Acres Land • Cultivating: ${user.crops || 'Wheat, Bajra, Jowar'}`}
               {user.role === 'laborer' && `Base Rate: ₹${user.expectedWage || '700'}/day • Skills: ${user.skills || 'Wheat/Bajra Harvesting, Tractor Handling'}`}
@@ -673,6 +849,19 @@ Issued via AgriConnect Gramonnati Rural Network
             >
               <UserCheck className="h-3.5 w-3.5 text-[#15803d]" />
               <span>Edit Full Profile & Bank DBT</span>
+            </button>
+
+            {/* Universal PDF Export Button */}
+            <button
+              onClick={() => {
+                exportProfileToPdf(user);
+                showToast('Verified Gramonnati PDF Profile downloaded successfully!');
+              }}
+              className="inline-flex items-center gap-1.5 bg-[#eaf4ec] hover:bg-[#d8edd9] text-[#14532d] border border-[#a3d4ad] px-4 py-2 rounded-full font-bold text-xs transition shadow-xs hover:scale-[1.02]"
+              title="Download official Gramonnati profile credentials as PDF"
+            >
+              <Download className="h-3.5 w-3.5 text-[#15803d]" />
+              <span>Download Profile (PDF)</span>
             </button>
 
             {user.role === 'farmer' && (
@@ -980,19 +1169,25 @@ Issued via AgriConnect Gramonnati Rural Network
                         )}
 
                         <button 
-                          onClick={() => setSelectedJobMap(job)}
-                          className="px-3.5 py-2 rounded-full text-xs font-bold border border-[#d8e0d9] text-[#183925] hover:bg-gray-50 transition flex items-center gap-1.5"
+                          onClick={() => {
+                            setSelectedJobMap(job);
+                            setActiveDestinationJob(job);
+                          }}
+                          className="px-3.5 py-2 rounded-full text-xs font-bold border border-[#bbf7d0] bg-emerald-50 text-[#14532d] hover:bg-emerald-100 transition flex items-center gap-1.5 shadow-xs"
                         >
-                          <Navigation className="h-3.5 w-3.5 text-[#2d6a4f]" />
-                          <span>View GPS Route on Map</span>
+                          <Navigation className="h-3.5 w-3.5 text-[#15803d]" />
+                          <span>Open In-Site GPS Navigator</span>
                         </button>
 
                         <button 
-                          onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`, '_blank')}
+                          onClick={() => {
+                            setSelectedJobMap(job);
+                            setActiveDestinationJob(job);
+                          }}
                           className="px-3.5 py-2 rounded-full text-xs font-bold bg-[#f4f8f5] text-[#2d6a4f] hover:bg-[#e4ede6] transition flex items-center gap-1.5 border border-[#d2dfd4]"
                         >
-                          <ExternalLink className="h-3 w-3 text-[#2d6a4f]" />
-                          <span>Google Maps Turn-by-Turn</span>
+                          <MapPin className="h-3 w-3 text-[#2d6a4f]" />
+                          <span>Turn-by-Turn Route</span>
                         </button>
                       </div>
 
@@ -1158,11 +1353,11 @@ Issued via AgriConnect Gramonnati Rural Network
 
                       <div className="pt-2 flex gap-2">
                         <button
-                          onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${myLocation[0]},${myLocation[1]}&destination=${selectedJobMap.lat},${selectedJobMap.lng}`, '_blank')}
-                          className="w-full bg-[#183925] hover:bg-[#122c1d] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                          onClick={() => setActiveDestinationJob(selectedJobMap)}
+                          className="w-full bg-[#14532d] hover:bg-[#166534] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
                         >
-                          <Navigation className="h-3.5 w-3.5 text-[#8CC63F]" />
-                          <span>Launch Google Maps Live Navigation</span>
+                          <Navigation className="h-3.5 w-3.5 text-[#fde047]" />
+                          <span>Launch Full In-Site GPS Destination Navigator</span>
                         </button>
                       </div>
                     </div>

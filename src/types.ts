@@ -12,6 +12,7 @@ export interface UserProfile {
   lat?: number;
   lng?: number;
   profileCompleted: boolean;
+  emailVerified?: boolean;
   // Farmer / Job Provider specific
   farmName?: string;
   farmSize?: string;

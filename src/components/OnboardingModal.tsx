@@ -19,17 +19,21 @@ import {
   CreditCard,
   BadgeCheck,
   Check,
-  AlertCircle
+  AlertCircle,
+  X,
+  Download
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import RuralRiseLogo from './RuralRiseLogo';
+import { exportProfileToPdf } from '../lib/pdfExport';
 
 interface OnboardingModalProps {
   user: UserProfile;
   isOpen: boolean;
   onComplete: (updatedUser: UserProfile) => void;
+  onClose?: () => void;
 }
 
 const COMMON_SKILLS = [
@@ -55,7 +59,7 @@ const COMMON_CROPS = [
   'Sugarcane'
 ];
 
-export default function OnboardingModal({ user, isOpen, onComplete }: OnboardingModalProps) {
+export default function OnboardingModal({ user, isOpen, onComplete, onClose }: OnboardingModalProps) {
   const [role, setRole] = useState<UserRole>(user.role || 'farmer');
   const [name, setName] = useState(user.name || '');
   const [phone, setPhone] = useState(user.phone || '+91 98220 12345');
@@ -89,7 +93,7 @@ export default function OnboardingModal({ user, isOpen, onComplete }: Onboarding
   const [emergencyContact, setEmergencyContact] = useState(user.emergencyContact || 'Sunil Pawar (Brother)');
   const [emergencyPhone, setEmergencyPhone] = useState(user.emergencyPhone || '+91 94231 99887');
 
-  // Bank & Payment Details (Crucial for direct wage disbursals and crop sale receipts)
+  // Bank & Payment Details (Only for Farmers and Laborers)
   const [bankName, setBankName] = useState(user.bankName || 'State Bank of India (SBI)');
   const [accountNumber, setAccountNumber] = useState(user.accountNumber || '34891029384');
   const [ifscCode, setIfscCode] = useState(user.ifscCode || 'SBIN0001245');
@@ -136,7 +140,7 @@ export default function OnboardingModal({ user, isOpen, onComplete }: Onboarding
 
   const handleAutoLocate = () => {
     if (!('geolocation' in navigator)) {
-      alert('Geolocation is not supported in this environment');
+      setLocation('Nashik Rural, Maharashtra');
       return;
     }
     setLocating(true);
@@ -163,16 +167,17 @@ export default function OnboardingModal({ user, isOpen, onComplete }: Onboarding
         setDistrict('Nashik');
         setTaluka('Niphad');
         setLocating(false);
-      }
+      },
+      { timeout: 6000 }
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-
-    const updatedUser: UserProfile = {
+  // Compile current user profile object for instant saving or PDF export
+  const buildCurrentProfile = (): UserProfile => {
+    const currentId = user.id || `user-${Date.now()}`;
+    return {
       ...user,
+      id: currentId,
       name: name.trim() || 'Rural Rise Member',
       role,
       phone: phone.trim(),
@@ -180,12 +185,12 @@ export default function OnboardingModal({ user, isOpen, onComplete }: Onboarding
       district: district.trim(),
       taluka: taluka.trim(),
       profileCompleted: true,
-      // Bank / Financial details
-      bankName: bankName.trim(),
-      accountNumber: accountNumber.trim(),
-      ifscCode: ifscCode.trim(),
-      upiId: upiId.trim(),
-      aadhaarNumber: aadhaarNumber.trim(),
+      // Bank / Financial details (strictly excluded for admin)
+      bankName: role !== 'admin' ? bankName.trim() : undefined,
+      accountNumber: role !== 'admin' ? accountNumber.trim() : undefined,
+      ifscCode: role !== 'admin' ? ifscCode.trim() : undefined,
+      upiId: role !== 'admin' ? upiId.trim() : undefined,
+      aadhaarNumber: role !== 'admin' ? aadhaarNumber.trim() : undefined,
       // Farmer
       farmName: role === 'farmer' ? farmName.trim() : undefined,
       farmSize: role === 'farmer' ? farmSize : undefined,
@@ -207,20 +212,36 @@ export default function OnboardingModal({ user, isOpen, onComplete }: Onboarding
       mandiDivision: role === 'admin' ? mandiDivision.trim() : undefined,
       adminCode: role === 'admin' ? adminCode.trim() : undefined,
     };
+  };
 
-    // Instant local save
+  const handleDownloadPdf = () => {
+    const current = buildCurrentProfile();
+    exportProfileToPdf(current);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+
+    const updatedUser = buildCurrentProfile();
+
+    // 1. INSTANT synchronous local save
     localStorage.setItem('user', JSON.stringify(updatedUser));
+    window.dispatchEvent(new Event('user-profile-updated'));
 
-    // Non-blocking firestore sync
-    if (user.id) {
-      const userRef = doc(db, 'users', user.id);
-      setDoc(userRef, updatedUser, { merge: true }).catch((err) => {
+    // 2. Invoke onComplete immediately with zero blocking delay
+    onComplete(updatedUser);
+
+    // 3. Fire-and-forget non-blocking Firestore sync in background
+    try {
+      const userRef = doc(db, 'users', updatedUser.id);
+      const cleanData = JSON.parse(JSON.stringify(updatedUser));
+      setDoc(userRef, cleanData, { merge: true }).catch((err) => {
         console.warn('Optional profile firestore sync note:', err);
       });
+    } catch (err) {
+      console.warn('Sync note:', err);
     }
-
-    setSaving(false);
-    onComplete(updatedUser);
   };
 
   return (
@@ -233,6 +254,18 @@ export default function OnboardingModal({ user, isOpen, onComplete }: Onboarding
       >
         {/* Top Decorative accent banner */}
         <div className="absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-r from-[#14532d] via-[#16a34a] via-[#eab308] to-[#ca8a04]"></div>
+
+        {/* Top-Right Cancel (X) Button */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-full text-[#496552] hover:text-[#14532d] hover:bg-[#eaf3eb] transition z-20"
+            title="Cancel and close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
 
         {/* Header with Gramonnati Rural Rise branding */}
         <div className="text-center mb-6 pt-1">
@@ -669,93 +702,116 @@ export default function OnboardingModal({ user, isOpen, onComplete }: Onboarding
             </motion.div>
           )}
 
-          {/* 4. BANK & PAYMENT DBT DETAILS (REQUIRED FOR BOTH WORKERS & FARMERS) */}
-          <div className="bg-gradient-to-br from-[#fffbeb] via-[#fef3c7]/50 to-[#fdfbf7] p-4 rounded-2xl border border-[#fde68a] space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-[#92400e]">
-                <CreditCard className="h-4 w-4 text-[#b45309]" />
-                <span>Step 4: Bank Account & UPI Details (For Direct Payouts)</span>
+          {/* 4. BANK & PAYMENT DBT DETAILS (ONLY FOR WORKERS & FARMERS - NOT FOR ADMIN) */}
+          {role !== 'admin' && (
+            <div className="bg-gradient-to-br from-[#fffbeb] via-[#fef3c7]/50 to-[#fdfbf7] p-4 rounded-2xl border border-[#fde68a] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#92400e]">
+                  <CreditCard className="h-4 w-4 text-[#b45309]" />
+                  <span>Step 4: Bank Account & UPI Details (For Direct Payouts)</span>
+                </div>
+                <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <BadgeCheck className="h-3 w-3 text-amber-700" /> DBT Ready
+                </span>
               </div>
-              <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                <BadgeCheck className="h-3 w-3 text-amber-700" /> DBT Ready
-              </span>
+
+              <p className="text-[11px] text-[#78350f]">
+                {role === 'laborer' 
+                  ? 'Your wages will be credited directly to this verified bank account or UPI ID after work completion.' 
+                  : 'Crop sale proceeds and payments from commodity buyers will be settled directly to this account.'}
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">Bank Name</label>
+                  <input 
+                    type="text" 
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="e.g. State Bank of India (SBI)"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs outline-none"
+                    required={role !== 'admin'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">Account Number</label>
+                  <input 
+                    type="text" 
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    placeholder="34891029384"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs font-mono outline-none"
+                    required={role !== 'admin'}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">IFSC Code</label>
+                  <input 
+                    type="text" 
+                    value={ifscCode}
+                    onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
+                    placeholder="SBIN0001245"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs font-mono uppercase outline-none"
+                    required={role !== 'admin'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">UPI ID (Google Pay / PhonePe)</label>
+                  <input 
+                    type="text" 
+                    value={upiId}
+                    onChange={(e) => setUpiId(e.target.value)}
+                    placeholder="9822011223@ybl"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs outline-none"
+                    required={role !== 'admin'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">Aadhaar / DBT Identifier</label>
+                  <input 
+                    type="text" 
+                    value={aadhaarNumber}
+                    onChange={(e) => setAadhaarNumber(e.target.value)}
+                    placeholder="XXXX-XXXX-8921"
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs font-mono outline-none"
+                  />
+                </div>
+              </div>
             </div>
+          )}
 
-            <p className="text-[11px] text-[#78350f]">
-              {role === 'laborer' 
-                ? 'Your wages will be credited directly to this verified bank account or UPI ID after work completion.' 
-                : 'Crop sale proceeds and payments from commodity buyers will be settled directly to this account.'}
-            </p>
+          {/* ACTION BUTTONS: CANCEL, DOWNLOAD PDF, AND INSTANT SAVE */}
+          <div className="pt-3 border-t border-[#e2ece3] flex flex-col sm:flex-row items-center gap-2.5">
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <X className="h-4 w-4 text-gray-500" />
+                <span>Cancel</span>
+              </button>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">Bank Name</label>
-                <input 
-                  type="text" 
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  placeholder="e.g. State Bank of India (SBI)"
-                  className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">Account Number</label>
-                <input 
-                  type="text" 
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  placeholder="34891029384"
-                  className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs font-mono outline-none"
-                  required
-                />
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-[#2d6a4f] bg-[#eaf4ec] hover:bg-[#d8edd9] text-[#14532d] text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
+              title="Download your official credentials as a verified PDF dossier"
+            >
+              <Download className="h-4 w-4 text-[#15803d]" />
+              <span>Download PDF</span>
+            </button>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">IFSC Code</label>
-                <input 
-                  type="text" 
-                  value={ifscCode}
-                  onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
-                  placeholder="SBIN0001245"
-                  className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs font-mono uppercase outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">UPI ID (Google Pay / PhonePe)</label>
-                <input 
-                  type="text" 
-                  value={upiId}
-                  onChange={(e) => setUpiId(e.target.value)}
-                  placeholder="9822011223@ybl"
-                  className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-[#78350f] mb-1">Aadhaar / DBT Identifier</label>
-                <input 
-                  type="text" 
-                  value={aadhaarNumber}
-                  onChange={(e) => setAadhaarNumber(e.target.value)}
-                  placeholder="XXXX-XXXX-8921"
-                  className="w-full px-3 py-2 bg-white rounded-lg border border-[#fcd34d] text-xs font-mono outline-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* SUBMIT BUTTON */}
-          <div className="pt-2">
             <button
               type="submit"
               disabled={saving}
-              className="w-full bg-gradient-to-r from-[#14532d] via-[#15803d] to-[#16a34a] hover:brightness-110 text-white py-3.5 rounded-2xl text-sm font-bold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+              className="flex-1 w-full bg-gradient-to-r from-[#14532d] via-[#15803d] to-[#16a34a] hover:brightness-110 text-white py-3 px-6 rounded-2xl text-xs sm:text-sm font-bold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
             >
-              <span>{saving ? 'Activating Profile & Credentials...' : 'Save Profile & Launch Gramonnati Dashboard'}</span>
+              <span>{saving ? 'Saving Instantly...' : 'Save Profile Instantly →'}</span>
               <ArrowRight className="h-4 w-4 text-[#fde047]" />
             </button>
           </div>

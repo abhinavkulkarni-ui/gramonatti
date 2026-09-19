@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import { 
   Briefcase, 
   MapPin, 
@@ -14,7 +14,7 @@ import {
   Plus, 
   X, 
   Sprout, 
-  Leaf,
+  Leaf, 
   Droplets, 
   Calendar, 
   CloudSun, 
@@ -35,7 +35,8 @@ import {
   CreditCard,
   BadgeCheck,
   RefreshCw,
-  Mail
+  Mail,
+  ArrowUpRight
 } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { sendEmailVerification } from 'firebase/auth';
@@ -45,6 +46,12 @@ import OnboardingModal from '../components/OnboardingModal';
 import RuralRiseLogo from '../components/RuralRiseLogo';
 import DestinationMapModal from '../components/DestinationMapModal';
 import { exportProfileToPdf } from '../lib/pdfExport';
+import { 
+  getGoogleMapsDirectionsUrl, 
+  getStoredUserGps, 
+  requestDeviceGps, 
+  calculateHaversineDistance 
+} from '../lib/geoUtils';
 
 // Fix Leaflet icons
 import L from 'leaflet';
@@ -62,6 +69,30 @@ const CustomGreenIcon = L.icon({
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
 });
+
+// Leaflet Auto-Sizer and Map Controller for Dashboard
+function DashboardMapController({ 
+  selectedJob, 
+  userLocation 
+}: { 
+  selectedJob: Job | null; 
+  userLocation: [number, number]; 
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+      if (selectedJob) {
+        const bounds = L.latLngBounds([userLocation, [selectedJob.lat, selectedJob.lng]]);
+        map.fitBounds(bounds, { padding: [45, 45], maxZoom: 13 });
+      } else {
+        map.setView(userLocation, 9);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [map, selectedJob, userLocation[0], userLocation[1]]);
+  return null;
+}
 
 export default function Dashboard() {
   const [user, setUser] = useState<UserProfile | null>(() => {
@@ -694,7 +725,21 @@ export default function Dashboard() {
   // Filter jobs by area
   const filteredJobs = jobs.filter(j => areaFilter === 'All' || j.area === areaFilter);
   const appliedJobIds = applications.map(a => a.jobId);
-  const myLocation: [number, number] = [18.5204, 73.8567]; // Base coords
+  
+  // User GPS coordinates for live routing
+  const [userGps, setUserGps] = useState<[number, number]>(() => getStoredUserGps());
+  const [locatingUser, setLocatingUser] = useState(false);
+  const [gpsStatusLabel, setGpsStatusLabel] = useState('Agrarian Base Active');
+
+  const handleLocateUser = async () => {
+    setLocatingUser(true);
+    setGpsStatusLabel('Requesting Device GPS...');
+    const res = await requestDeviceGps();
+    setUserGps(res.coords);
+    setGpsStatusLabel(res.message);
+    setLocatingUser(false);
+    showToast(res.isSimulated ? 'Using regional base hub coordinates' : 'Live device GPS locked!');
+  };
 
   return (
     <div className="min-h-screen pt-24 pb-20 bg-gradient-to-br from-[#fdfbf7] via-[#f4f8f2] to-[#fefcf3] text-[#143d24] relative overflow-hidden">
@@ -720,7 +765,7 @@ export default function Dashboard() {
         job={activeDestinationJob}
         isOpen={!!activeDestinationJob}
         onClose={() => setActiveDestinationJob(null)}
-        userLocation={myLocation}
+        userLocation={userGps}
       />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -1173,21 +1218,33 @@ export default function Dashboard() {
                             setSelectedJobMap(job);
                             setActiveDestinationJob(job);
                           }}
-                          className="px-3.5 py-2 rounded-full text-xs font-bold border border-[#bbf7d0] bg-emerald-50 text-[#14532d] hover:bg-emerald-100 transition flex items-center gap-1.5 shadow-xs"
+                          className="px-3.5 py-2 rounded-full text-xs font-bold border border-emerald-300 bg-emerald-50 text-[#14532d] hover:bg-emerald-100 transition flex items-center gap-1.5 shadow-xs"
+                          title="Open In-Site GPS Navigator with interactive map and field milestones"
                         >
                           <Navigation className="h-3.5 w-3.5 text-[#15803d]" />
-                          <span>Open In-Site GPS Navigator</span>
+                          <span>In-Site GPS Navigator</span>
                         </button>
+
+                        <a 
+                          href={getGoogleMapsDirectionsUrl(job.lat, job.lng, job.location, userGps[0], userGps[1])}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3.5 py-2 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 transition flex items-center gap-1.5 border border-amber-300 shadow-xs"
+                          title="Open Google Maps with Turn-by-Turn Route directly to destination"
+                        >
+                          <ArrowUpRight className="h-3.5 w-3.5 text-amber-700" />
+                          <span>Google Maps Route</span>
+                        </a>
 
                         <button 
                           onClick={() => {
                             setSelectedJobMap(job);
-                            setActiveDestinationJob(job);
                           }}
-                          className="px-3.5 py-2 rounded-full text-xs font-bold bg-[#f4f8f5] text-[#2d6a4f] hover:bg-[#e4ede6] transition flex items-center gap-1.5 border border-[#d2dfd4]"
+                          className="px-3 py-2 rounded-full text-xs font-semibold bg-[#f4f8f5] text-[#2d6a4f] hover:bg-[#e4ede6] transition flex items-center gap-1 border border-[#d2dfd4]"
+                          title="Preview route on interactive field map below"
                         >
                           <MapPin className="h-3 w-3 text-[#2d6a4f]" />
-                          <span>Turn-by-Turn Route</span>
+                          <span>Map Preview</span>
                         </button>
                       </div>
 
@@ -1267,52 +1324,97 @@ export default function Dashboard() {
             <div className="xl:col-span-5 space-y-6">
               
               <div className="bg-white rounded-3xl shadow-sm border border-[#e6ebe7] overflow-hidden sticky top-24">
-                <div className="p-5 border-b border-[#e9eae5] bg-[#fcfdfc] flex justify-between items-center">
+                <div className="p-5 border-b border-[#e9eae5] bg-[#fcfdfc] flex flex-wrap justify-between items-center gap-2">
                   <div>
                     <h3 className="text-base font-bold text-[#183925] flex items-center gap-2">
                       <MapPin className="h-4 w-4 text-[#2d6a4f]" />
                       Interactive Field GPS Navigator
                     </h3>
                     <p className="text-[11px] text-[#55695b]">
-                      Real-time farm coordinates with turn-by-turn routing
+                      Real-time farm destination coordinates with turn-by-turn routing
                     </p>
                   </div>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                    GPS Online
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleLocateUser}
+                      disabled={locatingUser}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full font-bold transition flex items-center gap-1 shadow-2xs disabled:opacity-60"
+                      title="Detect your device's live GPS"
+                    >
+                      <Navigation className={`h-3 w-3 text-emerald-700 ${locatingUser ? 'animate-spin' : ''}`} />
+                      <span>{locatingUser ? 'Locating...' : 'My Live GPS'}</span>
+                    </button>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                      {gpsStatusLabel.includes('Locked') ? 'Live GPS' : 'Base Point'}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Leaflet Map Stage */}
                 <div className="h-80 w-full bg-gray-100 relative z-0">
                   <MapContainer 
-                    center={selectedJobMap ? [selectedJobMap.lat, selectedJobMap.lng] : myLocation} 
-                    zoom={selectedJobMap ? 10 : 8} 
+                    center={selectedJobMap ? [selectedJobMap.lat, selectedJobMap.lng] : userGps} 
+                    zoom={selectedJobMap ? 11 : 9} 
                     scrollWheelZoom={false} 
                     className="h-full w-full"
                   >
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    {/* Automatically recenters and fits bounds when selection or user GPS updates */}
+                    <DashboardMapController selectedJob={selectedJobMap} userLocation={userGps} />
+
+                    <TileLayer 
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+                    />
                     
                     {filteredJobs.map(job => (
-                      <Marker key={job.id} position={[job.lat, job.lng]}>
+                      <Marker 
+                        key={job.id} 
+                        position={[job.lat, job.lng]}
+                        eventHandlers={{
+                          click: () => setSelectedJobMap(job)
+                        }}
+                      >
                         <Popup>
-                          <strong className="text-[#183925]">{job.title}</strong><br />
-                          {job.location}<br />
-                          <span className="text-emerald-700 font-bold">₹{job.pay}/day</span>
+                          <div className="p-1 text-xs">
+                            <strong className="text-[#183925] text-sm block font-bold">{job.title}</strong>
+                            <span className="text-gray-600 block mt-0.5">{job.location}</span>
+                            <span className="text-emerald-700 font-bold block my-1">Wage: ₹{job.pay}/day</span>
+                            <div className="flex items-center gap-1.5 pt-1.5 border-t border-gray-200">
+                              <button
+                                onClick={() => setActiveDestinationJob(job)}
+                                className="text-[10px] bg-[#14532d] text-white px-2 py-1 rounded-md font-bold hover:bg-[#166534] transition"
+                              >
+                                In-Site Nav
+                              </button>
+                              <a
+                                href={getGoogleMapsDirectionsUrl(job.lat, job.lng, job.location, userGps[0], userGps[1])}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] bg-amber-400 hover:bg-amber-300 text-[#14532d] px-2 py-1 rounded-md font-bold transition flex items-center gap-0.5"
+                              >
+                                <span>Google Maps</span>
+                                <ArrowUpRight className="h-2.5 w-2.5" />
+                              </a>
+                            </div>
+                          </div>
                         </Popup>
                       </Marker>
                     ))}
 
-                    <Marker position={myLocation} icon={CustomGreenIcon}>
+                    <Marker position={userGps} icon={CustomGreenIcon}>
                       <Popup>
-                        <strong>Your Base Location</strong><br />
-                        Pune Agro Hub
+                        <div className="p-1 text-xs">
+                          <strong className="text-emerald-800 font-bold">📍 Your Starting Point</strong><br />
+                          <span className="text-gray-600 text-[10px]">{userGps[0].toFixed(4)}, {userGps[1].toFixed(4)}</span>
+                        </div>
                       </Popup>
                     </Marker>
 
                     {selectedJobMap && (
                       <Polyline 
-                        positions={[myLocation, [selectedJobMap.lat, selectedJobMap.lng]]} 
-                        color="#183925" 
+                        positions={[userGps, [selectedJobMap.lat, selectedJobMap.lng]]} 
+                        color="#15803d" 
                         weight={4}
                         dashArray="6, 6"
                         opacity={0.85}
@@ -1331,7 +1433,7 @@ export default function Dashboard() {
                           <h4 className="font-bold text-[#183925] text-sm">{selectedJobMap.title}</h4>
                         </div>
                         <span className="text-xs font-bold text-[#2d6a4f] bg-[#eef5ee] px-2.5 py-1 rounded-full">
-                          ~{selectedJobMap.distanceKm || 14} km away
+                          ~{calculateHaversineDistance(userGps[0], userGps[1], selectedJobMap.lat, selectedJobMap.lng) || selectedJobMap.distanceKm || 14} km away
                         </span>
                       </div>
 
@@ -1339,32 +1441,42 @@ export default function Dashboard() {
                       <div className="p-3 bg-[#f7faf7] rounded-2xl border border-[#e2ece3] space-y-2 text-xs text-[#183925]">
                         <div className="flex items-start gap-2">
                           <span className="h-4 w-4 rounded-full bg-[#183925] text-white text-[10px] flex items-center justify-center shrink-0 mt-0.5">1</span>
-                          <span>Head north toward State Highway 10 / Mandi Bypass.</span>
+                          <span>Head north toward Regional Agrarian Highway / Mandi Bypass.</span>
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="h-4 w-4 rounded-full bg-[#183925] text-white text-[10px] flex items-center justify-center shrink-0 mt-0.5">2</span>
-                          <span>Turn right onto Niphad Agro Approach Road (signboard for {selectedJobMap.farmerName}).</span>
+                          <span>Turn onto Field Approach Road towards {selectedJobMap.location} (landmark: {selectedJobMap.farmerName} farm gate).</span>
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="h-4 w-4 rounded-full bg-[#2d6a4f] text-white text-[10px] flex items-center justify-center shrink-0 mt-0.5">3</span>
-                          <span>Arrive at Farm Gate #2. Check in with Supervisor at weighing bridge.</span>
+                          <span>Arrive at Destination: {selectedJobMap.location}. Check in with producer.</span>
                         </div>
                       </div>
 
-                      <div className="pt-2 flex gap-2">
+                      <div className="pt-2.5 flex flex-col sm:flex-row gap-2">
                         <button
                           onClick={() => setActiveDestinationJob(selectedJobMap)}
-                          className="w-full bg-[#14532d] hover:bg-[#166534] text-white py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                          className="flex-1 bg-[#14532d] hover:bg-[#166534] text-white py-2.5 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
                         >
                           <Navigation className="h-3.5 w-3.5 text-[#fde047]" />
-                          <span>Launch Full In-Site GPS Destination Navigator</span>
+                          <span>Launch In-Site Navigator</span>
                         </button>
+                        <a
+                          href={getGoogleMapsDirectionsUrl(selectedJobMap.lat, selectedJobMap.lng, selectedJobMap.location, userGps[0], userGps[1])}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-[#14532d] py-2.5 px-3.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                          title="Open turn-by-turn driving directions in Google Maps app or browser"
+                        >
+                          <ArrowUpRight className="h-3.5 w-3.5 text-[#14532d]" />
+                          <span>Open in Google Maps</span>
+                        </a>
                       </div>
                     </div>
                   ) : (
                     <div className="text-center py-3 text-xs text-gray-500">
                       <Navigation className="h-5 w-5 text-gray-400 mx-auto mb-1" />
-                      Select "View GPS Route on Map" on any harvest job to view turn-by-turn navigation!
+                      Select "Map Preview" or click any field pin to preview turn-by-turn routing!
                     </div>
                   )}
                 </div>
@@ -1487,9 +1599,21 @@ export default function Dashboard() {
                         </span>
                       </div>
 
-                      <div className="text-xs text-[#55695b] space-y-0.5">
+                      <div className="text-xs text-[#55695b] space-y-1">
                         <p>Buyer: <strong className="text-[#183925]">{ord.buyerName}</strong> ({ord.buyerPhone})</p>
-                        <p>Destination: {ord.deliveryAddress} • {ord.deliveryType === 'farm_pickup' ? 'Farm-Gate Pickup' : 'Mandi Transport'}</p>
+                        <div className="flex items-center flex-wrap gap-2">
+                          <span>Destination: {ord.deliveryAddress} • {ord.deliveryType === 'farm_pickup' ? 'Farm-Gate Pickup' : 'Mandi Transport'}</span>
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.deliveryAddress)}&travelmode=driving`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 transition"
+                            title="Open Google Maps route to delivery destination"
+                          >
+                            <ArrowUpRight className="h-3 w-3 text-amber-700" />
+                            <span>Route in Google Maps</span>
+                          </a>
+                        </div>
                       </div>
                     </div>
 

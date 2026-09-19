@@ -28,6 +28,7 @@ import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import RuralRiseLogo from './RuralRiseLogo';
 import { exportProfileToPdf } from '../lib/pdfExport';
+import { requestDeviceGps } from '../lib/geoUtils';
 
 interface OnboardingModalProps {
   user: UserProfile;
@@ -138,38 +139,32 @@ export default function OnboardingModal({ user, isOpen, onComplete, onClose }: O
     }
   };
 
-  const handleAutoLocate = () => {
-    if (!('geolocation' in navigator)) {
-      setLocation('Nashik Rural, Maharashtra');
-      return;
-    }
+  const handleAutoLocate = async () => {
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          const data = await res.json();
-          const city = data.address.city || data.address.town || data.address.village || data.address.district || 'Nashik';
-          const subDistrict = data.address.county || data.address.suburb || 'Taluka Center';
-          const state = data.address.state || 'Maharashtra';
-          setLocation(`${city}, ${state}`);
-          setDistrict(city);
-          setTaluka(subDistrict);
-        } catch (e) {
-          setLocation(`Lat: ${latitude.toFixed(2)}, Lng: ${longitude.toFixed(2)}`);
-        } finally {
-          setLocating(false);
-        }
-      },
-      () => {
-        setLocation('Nashik Rural, Maharashtra');
+    try {
+      const gpsRes = await requestDeviceGps();
+      const [latitude, longitude] = gpsRes.coords;
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        const data = await res.json();
+        const city = data.address?.city || data.address?.town || data.address?.village || data.address?.district || 'Nashik';
+        const subDistrict = data.address?.county || data.address?.suburb || 'Taluka Center';
+        const state = data.address?.state || 'Maharashtra';
+        setLocation(`${city}, ${state}`);
+        setDistrict(city);
+        setTaluka(subDistrict);
+      } catch (e) {
+        setLocation(`Lat: ${latitude.toFixed(2)}, Lng: ${longitude.toFixed(2)}`);
         setDistrict('Nashik');
-        setTaluka('Niphad');
-        setLocating(false);
-      },
-      { timeout: 6000 }
-    );
+        setTaluka('Taluka Center');
+      }
+    } catch (e) {
+      setLocation('Nashik Rural, Maharashtra');
+      setDistrict('Nashik');
+      setTaluka('Niphad');
+    } finally {
+      setLocating(false);
+    }
   };
 
   // Compile current user profile object for instant saving or PDF export

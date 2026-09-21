@@ -29,6 +29,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import RuralRiseLogo from './RuralRiseLogo';
 import { exportProfileToPdf } from '../lib/pdfExport';
 import { requestDeviceGps } from '../lib/geoUtils';
+import { saveUserProfile } from '../lib/userStore';
 
 interface OnboardingModalProps {
   user: UserProfile;
@@ -220,23 +221,11 @@ export default function OnboardingModal({ user, isOpen, onComplete, onClose }: O
 
     const updatedUser = buildCurrentProfile();
 
-    // 1. INSTANT synchronous local save
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-    window.dispatchEvent(new Event('user-profile-updated'));
+    // Universally persist across localStorage, email registry, and Firestore dual-indexes
+    const saved = saveUserProfile(updatedUser);
 
-    // 2. Invoke onComplete immediately with zero blocking delay
-    onComplete(updatedUser);
-
-    // 3. Fire-and-forget non-blocking Firestore sync in background
-    try {
-      const userRef = doc(db, 'users', updatedUser.id);
-      const cleanData = JSON.parse(JSON.stringify(updatedUser));
-      setDoc(userRef, cleanData, { merge: true }).catch((err) => {
-        console.warn('Optional profile firestore sync note:', err);
-      });
-    } catch (err) {
-      console.warn('Sync note:', err);
-    }
+    // Invoke onComplete immediately with zero blocking delay
+    onComplete(saved);
   };
 
   return (

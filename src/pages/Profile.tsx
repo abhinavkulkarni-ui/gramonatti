@@ -27,6 +27,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import RuralRiseLogo from '../components/RuralRiseLogo';
 import { exportProfileToPdf } from '../lib/pdfExport';
 import { requestDeviceGps } from '../lib/geoUtils';
+import { saveUserProfile } from '../lib/userStore';
 import { UserProfile } from '../types';
 
 export default function Profile() {
@@ -267,24 +268,11 @@ export default function Profile() {
     
     const updatedUser = buildProfile();
 
-    // 1. Instant local persistence & sync event
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-    window.dispatchEvent(new Event('user-profile-updated'));
+    // Universally persist across localStorage, email registry, and Firestore
+    const saved = saveUserProfile(updatedUser);
+    setUser(saved);
 
-    // 2. Fast background Firestore sync
-    if (updatedUser.id) {
-      try {
-        const userRef = doc(db, 'users', updatedUser.id);
-        const cleanPayload = JSON.parse(JSON.stringify(updatedUser));
-        setDoc(userRef, cleanPayload, { merge: true }).catch(err => {
-          console.warn('Optional background firestore sync note:', err);
-        });
-      } catch (err) {
-        console.warn('Sync note:', err);
-      }
-    }
-
-    setToastMessage('Profile credentials saved instantly!');
+    setToastMessage('Profile credentials saved successfully!');
     
     // Immediate return to dashboard
     setTimeout(() => {

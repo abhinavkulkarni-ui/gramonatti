@@ -36,7 +36,8 @@ import {
   BadgeCheck,
   RefreshCw,
   Mail,
-  ArrowUpRight
+  ArrowUpRight,
+  ArrowRight
 } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { sendEmailVerification } from 'firebase/auth';
@@ -45,6 +46,8 @@ import { Job, JobApplication, FarmProduct, ProductOrder, UserProfile } from '../
 import OnboardingModal from '../components/OnboardingModal';
 import RuralRiseLogo from '../components/RuralRiseLogo';
 import DestinationMapModal from '../components/DestinationMapModal';
+import HarvestYieldDemandChart from '../components/HarvestYieldDemandChart';
+import { isProfileCompleted } from '../lib/userStore';
 import { exportProfileToPdf } from '../lib/pdfExport';
 import { 
   getGoogleMapsDirectionsUrl, 
@@ -125,12 +128,17 @@ export default function Dashboard() {
   const [newJobWorkersNeeded, setNewJobWorkersNeeded] = useState(4);
   const [postingJob, setPostingJob] = useState(false);
 
-  // Post Produce Modal State
+  // Post Produce Modal State (Properly Adjusted Market Fields)
   const [showSellProductModal, setShowSellProductModal] = useState(false);
   const [newProduceCrop, setNewProduceCrop] = useState<FarmProduct['cropType']>('Wheat');
   const [newProduceVariety, setNewProduceVariety] = useState('Sharbati Gold');
   const [newProducePriceKg, setNewProducePriceKg] = useState('32');
   const [newProduceQtyKg, setNewProduceQtyKg] = useState('1000');
+  const [newProduceGrade, setNewProduceGrade] = useState<'A+' | 'A' | 'B'>('A+');
+  const [newProduceMoisture, setNewProduceMoisture] = useState('10.2');
+  const [newProducePackaging, setNewProducePackaging] = useState('50kg Jute Gunny Bags');
+  const [newProduceDelivery, setNewProduceDelivery] = useState<'farm_pickup' | 'mandi_delivery'>('mandi_delivery');
+  const [newProduceOrganic, setNewProduceOrganic] = useState(true);
   const [newProduceLocation, setNewProduceLocation] = useState(user?.location || 'Nashik Mandi Yard');
   const [postingProduce, setPostingProduce] = useState(false);
 
@@ -429,8 +437,15 @@ export default function Dashboard() {
   useEffect(() => {
     // Check if new user requested onboarding or profile is incomplete
     const params = new URLSearchParams(window.location.search);
-    if (params.get('onboard') === 'true' || (user && !user.profileCompleted)) {
+    const profileDone = isProfileCompleted(user);
+    if (!profileDone && (params.get('onboard') === 'true' || !user?.profileCompleted)) {
       setShowOnboarding(true);
+    } else {
+      setShowOnboarding(false);
+      // Clean up URL parameter cleanly if already completed
+      if (params.get('onboard') === 'true') {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
     }
 
     fetchJobs();
@@ -654,7 +669,7 @@ export default function Dashboard() {
       farmerId: user.id,
       farmerName: user.name,
       farmerPhone: user.phone || '+91 98220 11223',
-      name: `${newProduceVariety} ${newProduceCrop}`,
+      name: `${newProduceVariety} ${newProduceCrop} (${newProduceGrade})`,
       cropType: newProduceCrop,
       category: newProduceCrop === 'Wheat' ? 'Cereals' : (newProduceCrop === 'Bajra' || newProduceCrop === 'Jowar' ? 'Millets' : 'Oilseeds'),
       variety: newProduceVariety,
@@ -662,13 +677,14 @@ export default function Dashboard() {
       pricePerQuintal: price * 100,
       quantityAvailableKg: qty,
       minOrderKg: 50,
-      description: `Harvested directly from ${user.name}'s farm. Cleaned, machine-graded, moisture-controlled.`,
+      description: `Harvested directly from ${user.name}'s farm. Cleaned, machine-graded (${newProduceGrade}), moisture tested at ${newProduceMoisture}%. Packaging: ${newProducePackaging}. Delivery: ${newProduceDelivery === 'farm_pickup' ? 'Farm-Gate Pickup' : 'Mandi Transport Included'}.`,
       location: newProduceLocation,
+      moisturePercent: Number(newProduceMoisture) || 10.2,
       mandiBenchmarkRate: Math.round(price * 95),
       imageUrl: imageMap[newProduceCrop] || imageMap['Wheat'],
       harvestDate: new Date().toISOString().split('T')[0],
-      organicCertified: true,
-      qualityGrade: 'A+',
+      organicCertified: newProduceOrganic,
+      qualityGrade: newProduceGrade,
       status: 'active'
     };
 
@@ -1051,6 +1067,9 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* Harvest Yields & Seasonal Mandi Demand Recharts Line Chart */}
+        <HarvestYieldDemandChart />
 
         {/* Dashboard Navigation Tabs */}
         <div className="flex items-center gap-2 mb-6 border-b border-[#e6ebe7] pb-3 overflow-x-auto no-scrollbar">
@@ -1540,17 +1559,31 @@ export default function Dashboard() {
                           }}
                           className="w-full h-full object-cover"
                         />
-                        <span className="absolute top-3 left-3 bg-[#183925]/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
-                          {p.cropType}
+                        <span className="absolute top-3 left-3 bg-[#183925]/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                          <span>{p.cropType}</span>
+                          <span className="text-amber-300 font-extrabold">• {p.qualityGrade || 'A+'}</span>
                         </span>
-                        <span className="absolute bottom-3 right-3 bg-white/95 text-[#183925] text-xs font-bold px-2 py-0.5 rounded-md">
-                          {p.quantityAvailableKg} kg left
+                        <span className="absolute bottom-3 right-3 bg-white/95 text-[#183925] text-xs font-bold px-2.5 py-1 rounded-lg shadow-xs">
+                          {p.quantityAvailableKg} kg ({Math.round(p.quantityAvailableKg / 50)} bags)
                         </span>
                       </div>
 
                       <div className="p-5">
-                        <h4 className="font-bold text-base text-[#183925] leading-snug mb-1">{p.name}</h4>
-                        <span className="text-xs text-[#55695b] block mb-3">{p.variety} • {p.location}</span>
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <h4 className="font-bold text-base text-[#183925] leading-snug">{p.name}</h4>
+                          {p.organicCertified && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full shrink-0">
+                              Residue-Free
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-[#55695b] block mb-2">{p.variety} • {p.location}</span>
+
+                        <div className="flex items-center gap-2 mb-3 text-[11px] text-[#2d6a4f] bg-[#f2f7f3] px-2.5 py-1 rounded-xl">
+                          <span>Moisture: <strong>{p.moisturePercent || 10.2}%</strong></span>
+                          <span>•</span>
+                          <span>Grade: <strong>{p.qualityGrade || 'A+'} Standard</strong></span>
+                        </div>
 
                         <div className="bg-[#f7faf7] p-3 rounded-2xl border border-[#e4eee5] flex justify-between items-center text-xs">
                           <div>
@@ -1879,7 +1912,7 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* MODAL: SELL FARM PRODUCE */}
+      {/* MODAL: SELL FARM PRODUCE (PROPERLY ADJUSTED MARKET FIELDS) */}
       <AnimatePresence>
         {showSellProductModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
@@ -1887,32 +1920,34 @@ export default function Dashboard() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-[#d8e5da] my-8 relative overflow-hidden"
+              className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-[#d8e5da] my-8 relative overflow-hidden max-h-[90vh] overflow-y-auto"
             >
               <button 
                 onClick={() => setShowSellProductModal(false)}
-                className="absolute top-5 right-5 text-gray-400 hover:text-gray-600"
+                className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100"
               >
                 <X className="h-5 w-5" />
               </button>
 
-              <div className="mb-6">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#2d6a4f]">
-                  Produce Sell Dashboard
+              <div className="mb-5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#15803d] flex items-center gap-1">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  <span>APMC Market Terminal • Produce Sales</span>
                 </span>
-                <h3 className="text-2xl font-serif text-[#183925] font-bold mt-1">
-                  List Harvested Grains
+                <h3 className="text-2xl font-serif text-[#14532d] font-bold mt-1">
+                  List Harvested Crop Produce
                 </h3>
                 <p className="text-xs text-[#55695b] mt-0.5">
-                  Direct sale to mills, traders, and mandi buyers.
+                  Direct sale to registered flour mills, solvent plants, and authorized mandi traders.
                 </p>
               </div>
 
               <form onSubmit={handlePostProduce} className="space-y-4">
                 
-                <div className="grid grid-cols-2 gap-3">
+                {/* Crop & Variety Selection */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-[#183925] mb-1">Crop Type</label>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Crop Type</label>
                     <select
                       value={newProduceCrop}
                       onChange={(e) => {
@@ -1929,72 +1964,223 @@ export default function Dashboard() {
                           setNewProducePriceKg('42');
                         } else if (c === 'Soybean') {
                           setNewProduceVariety('JS-335');
-                          setNewProducePriceKg('48');
+                          setNewProducePriceKg('52');
+                        } else if (c === 'Cotton') {
+                          setNewProduceVariety('BT Cotton (Long Staple)');
+                          setNewProducePriceKg('68');
+                        } else if (c === 'Toor Dal') {
+                          setNewProduceVariety('Desi White Toor');
+                          setNewProducePriceKg('74');
                         }
                       }}
-                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#d8e0d9] text-xs font-semibold text-[#14532d] bg-[#fafdfa] outline-none focus:border-[#15803d]"
                     >
-                      <option value="Wheat">Wheat (Gahu)</option>
-                      <option value="Bajra">Bajra (Pearl Millet)</option>
-                      <option value="Jowar">Jowar (White Sorghum)</option>
-                      <option value="Soybean">Yellow Soybean</option>
-                      <option value="Cotton">Cotton (Kapas)</option>
-                      <option value="Toor Dal">Toor Dal</option>
+                      <option value="Wheat">🌾 Wheat (Gahu)</option>
+                      <option value="Bajra">🌱 Bajra (Pearl Millet)</option>
+                      <option value="Jowar">🌾 Jowar (Maldandi Sorghum)</option>
+                      <option value="Soybean">🟡 Yellow Soybean (Oilseed)</option>
+                      <option value="Cotton">☁️ Cotton (Kapas)</option>
+                      <option value="Toor Dal">🥣 Toor Dal (Arhar)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-[#183925] mb-1">Crop Variety</label>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Crop Variety</label>
                     <input 
                       type="text"
                       value={newProduceVariety}
                       onChange={(e) => setNewProduceVariety(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                      placeholder="e.g. Sharbati Gold / Lokwan"
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#d8e0d9] text-xs text-[#14532d] bg-[#fafdfa] outline-none focus:border-[#15803d]"
                       required
                     />
                   </div>
                 </div>
 
+                {/* MSP & Benchmark Reference Card */}
+                {(() => {
+                  const mspMap: Record<string, number> = {
+                    'Wheat': 2275,
+                    'Bajra': 2500,
+                    'Jowar': 3180,
+                    'Soybean': 4892,
+                    'Cotton': 6620,
+                    'Toor Dal': 7000
+                  };
+                  const msp = mspMap[newProduceCrop] || 2275;
+                  const enteredQtl = Number(newProducePriceKg) * 100;
+                  const diff = enteredQtl - msp;
+                  return (
+                    <div className="p-3 bg-[#f3f9f3] rounded-2xl border border-[#cde2cf] flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-[#15803d] tracking-wider block">
+                          Official Minimum Support Price (MSP)
+                        </span>
+                        <span className="font-serif font-bold text-[#14532d] text-sm">
+                          ₹{msp.toLocaleString('en-IN')}/Qtl (₹{(msp / 100).toFixed(2)}/kg)
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-gray-500 block">Your Price Realization</span>
+                        <span className={`font-bold font-mono text-xs ${diff >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          ₹{enteredQtl.toLocaleString('en-IN')}/Qtl {diff >= 0 ? `(+₹${diff} over MSP)` : `(-₹${Math.abs(diff)})`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Price, Quantity & Calculations */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-[#183925] mb-1">Price (₹/kg)</label>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Price per Kilogram (₹/kg)</label>
                     <input 
                       type="number"
                       value={newProducePriceKg}
                       onChange={(e) => setNewProducePriceKg(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-bold text-[#14532d] bg-[#fafdfa] outline-none focus:border-[#15803d]"
                       required
                     />
+                    <span className="text-[10px] text-gray-500 mt-1 block">
+                      = ₹{(Number(newProducePriceKg) * 100).toLocaleString('en-IN')} per Quintal
+                    </span>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-[#183925] mb-1">Available Quantity (Kg)</label>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Available Quantity (Kg)</label>
                     <input 
                       type="number"
                       value={newProduceQtyKg}
                       onChange={(e) => setNewProduceQtyKg(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-bold text-[#14532d] bg-[#fafdfa] outline-none focus:border-[#15803d]"
                       required
                     />
+                    <span className="text-[10px] text-[#15803d] font-medium mt-1 block">
+                      = {Math.round(Number(newProduceQtyKg) / 50)} bags (50kg each) / {(Number(newProduceQtyKg) / 100).toFixed(1)} Qtl
+                    </span>
                   </div>
                 </div>
 
+                {/* Lot Total Value Badge */}
+                <div className="p-2.5 bg-[#fefce8] border border-[#fef08a] rounded-xl flex items-center justify-between text-xs">
+                  <span className="text-amber-900 font-medium">Estimated Lot Valuation:</span>
+                  <span className="font-mono font-bold text-amber-950 text-sm">
+                    ₹{(Number(newProducePriceKg) * Number(newProduceQtyKg)).toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                {/* Quality Grade & Moisture % */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Quality Grade</label>
+                    <select
+                      value={newProduceGrade}
+                      onChange={(e) => setNewProduceGrade(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-semibold text-[#14532d] bg-[#fafdfa] outline-none"
+                    >
+                      <option value="A+">Grade A+ (Export / High Gluten)</option>
+                      <option value="A">Grade A (Standard Mandi Fair Average)</option>
+                      <option value="B">Grade B (Commercial Mill Grade)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Moisture Level (%)</label>
+                    <input 
+                      type="number"
+                      step="0.1"
+                      value={newProduceMoisture}
+                      onChange={(e) => setNewProduceMoisture(e.target.value)}
+                      placeholder="e.g. 10.5"
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-semibold text-[#14532d] bg-[#fafdfa] outline-none"
+                      required
+                    />
+                    <span className="text-[10px] text-gray-500 mt-1 block">
+                      {Number(newProduceMoisture) <= 12 ? '✅ Safe storage standard (<12%)' : '⚠️ Requires sun drying (>12%)'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Packaging & Logistics Delivery */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Packaging Standard</label>
+                    <select
+                      value={newProducePackaging}
+                      onChange={(e) => setNewProducePackaging(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-semibold text-[#14532d] bg-[#fafdfa] outline-none"
+                    >
+                      <option value="50kg Jute Gunny Bags">50kg Jute Gunny Bags</option>
+                      <option value="50kg HDPE Poly Sacks">50kg HDPE Poly Sacks</option>
+                      <option value="Loose Bulk Truckload">Loose Bulk Truckload</option>
+                      <option value="Hermetic Sealed Bags">Hermetic Sealed Sacks</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#14532d] mb-1">Delivery Fulfillment</label>
+                    <select
+                      value={newProduceDelivery}
+                      onChange={(e) => setNewProduceDelivery(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-semibold text-[#14532d] bg-[#fafdfa] outline-none"
+                    >
+                      <option value="mandi_delivery">Mandi Yard Transport Included</option>
+                      <option value="farm_pickup">Farm-Gate Pickup (Buyer Arranges Truck)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Organic Toggle */}
+                <div className="flex items-center gap-2 p-2 bg-[#f4f8f4] rounded-xl border border-[#d2e2d5]">
+                  <input
+                    type="checkbox"
+                    id="organicToggle"
+                    checked={newProduceOrganic}
+                    onChange={(e) => setNewProduceOrganic(e.target.checked)}
+                    className="h-4 w-4 rounded text-[#15803d] focus:ring-[#15803d]"
+                  />
+                  <label htmlFor="organicToggle" className="text-xs font-bold text-[#14532d] cursor-pointer">
+                    Certified Organic / Residue Free Produce
+                  </label>
+                </div>
+
+                {/* Location */}
                 <div>
-                  <label className="block text-[11px] font-bold text-[#183925] mb-1">Farm / Mandi Yard Location</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-[#14532d]">Farm / Mandi Yard Location</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (user?.location) {
+                          setNewProduceLocation(user.location);
+                        } else {
+                          setNewProduceLocation('Niphad APMC Yard, Nashik, Maharashtra');
+                        }
+                      }}
+                      className="text-[10px] text-[#15803d] font-bold hover:underline"
+                    >
+                      Use Profile Location
+                    </button>
+                  </div>
                   <input 
                     type="text"
                     value={newProduceLocation}
                     onChange={(e) => setNewProduceLocation(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs text-[#14532d] bg-[#fafdfa] outline-none focus:border-[#15803d]"
                     required
                   />
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-3">
                   <button
                     type="submit"
                     disabled={postingProduce}
-                    className="w-full bg-[#183925] hover:bg-[#122c1d] text-white py-3 rounded-full text-xs font-bold transition shadow-sm"
+                    className="w-full bg-gradient-to-r from-[#14532d] via-[#15803d] to-[#16a34a] hover:brightness-110 text-white py-3 rounded-2xl text-xs sm:text-sm font-bold transition shadow-md flex items-center justify-center gap-2 disabled:opacity-75"
                   >
-                    {postingProduce ? 'Publishing...' : 'List Produce for Sale'}
+                    {postingProduce ? (
+                      <div className="h-4 w-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <span>Publish Produce to Mandi Terminal</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </button>
                 </div>
 

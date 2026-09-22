@@ -1095,16 +1095,19 @@ export default function Marketplace() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[11px] font-bold text-[#183925] mb-1">Price (₹/kg)</label>
                     <input 
                       type="number"
                       value={newPricePerKg}
                       onChange={(e) => setNewPricePerKg(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-bold text-[#183925] outline-none focus:border-[#2d6a4f]"
                       required
                     />
+                    <span className="text-[10px] text-gray-500 mt-1 block">
+                      = ₹{(Number(newPricePerKg || 0) * 100).toLocaleString('en-IN')}/Qtl
+                    </span>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-[#183925] mb-1">Total Stock (Kg)</label>
@@ -1112,22 +1115,33 @@ export default function Marketplace() {
                       type="number"
                       value={newQuantityKg}
                       onChange={(e) => setNewQuantityKg(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs font-bold text-[#183925] outline-none focus:border-[#2d6a4f]"
                       required
                     />
+                    <span className="text-[10px] text-[#2d6a4f] mt-1 block font-medium">
+                      = {(Number(newQuantityKg || 0) / 100).toFixed(1)} Quintals
+                    </span>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-[#183925] mb-1">Grade</label>
                     <select 
                       value={newGrade}
                       onChange={(e) => setNewGrade(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-[#d8e0d9] text-xs outline-none bg-white"
                     >
-                      <option value="A+">Grade A+ (Organic)</option>
-                      <option value="A">Grade A (Standard)</option>
-                      <option value="B">Grade B (Commercial)</option>
+                      <option value="A+">Grade A+ (Premium / Export)</option>
+                      <option value="A">Grade A (Standard Mandi)</option>
+                      <option value="B">Grade B (Commercial Mill)</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Estimated Lot Valuation Badge */}
+                <div className="p-3 bg-[#f2f7f3] rounded-2xl border border-[#d4e6d6] flex items-center justify-between text-xs">
+                  <span className="text-[#2d6a4f] font-semibold">Total Estimated Lot Value:</span>
+                  <span className="font-mono font-bold text-[#183925] text-sm">
+                    ₹{(Number(newPricePerKg || 0) * Number(newQuantityKg || 0)).toLocaleString('en-IN')}
+                  </span>
                 </div>
 
                 <div>

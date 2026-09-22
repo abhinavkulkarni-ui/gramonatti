@@ -47,7 +47,7 @@ import OnboardingModal from '../components/OnboardingModal';
 import RuralRiseLogo from '../components/RuralRiseLogo';
 import DestinationMapModal from '../components/DestinationMapModal';
 import HarvestYieldDemandChart from '../components/HarvestYieldDemandChart';
-import { isProfileCompleted } from '../lib/userStore';
+import { isProfileCompleted, UserRole } from '../lib/userStore';
 import { exportProfileToPdf } from '../lib/pdfExport';
 import { 
   getGoogleMapsDirectionsUrl, 
@@ -104,7 +104,8 @@ export default function Dashboard() {
   });
 
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [activeTab, setActiveTab] = useState<'jobs' | 'products' | 'admin'>('jobs');
+  type DashboardTab = 'jobs' | 'location' | 'products' | 'yields' | 'earnings' | 'admin';
+  const [activeTab, setActiveTab] = useState<DashboardTab>('jobs');
   const [areaFilter, setAreaFilter] = useState<string>('All');
   
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -954,9 +955,17 @@ export default function Dashboard() {
               </button>
             )}
 
-            <span className="bg-[#ecfdf5] text-[#14532d] border border-[#a7f3d0] px-3.5 py-2 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
-              <span className="h-2 w-2 rounded-full bg-[#15803d] animate-pulse"></span>
-              {user.role} Active
+            <span className={`px-3.5 py-2 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-xs border ${
+              user.role === 'farmer' ? 'bg-[#ecfdf5] text-[#14532d] border-[#a7f3d0]' :
+              user.role === 'laborer' ? 'bg-amber-50 text-amber-900 border-amber-300' :
+              'bg-purple-50 text-purple-900 border-purple-300'
+            }`}>
+              <span className={`h-2 w-2 rounded-full animate-pulse ${
+                user.role === 'farmer' ? 'bg-[#15803d]' :
+                user.role === 'laborer' ? 'bg-amber-600' :
+                'bg-purple-600'
+              }`}></span>
+              {user.role === 'farmer' ? 'Kisan (Farmer) Active' : user.role === 'laborer' ? 'Shramik (Laborer) Active' : 'APMC Admin Active'}
             </span>
           </div>
         </header>
@@ -1003,49 +1012,99 @@ export default function Dashboard() {
 
         {/* Telemetry Overview Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
-            <div>
-              <span className="text-xs text-[#55695b] font-medium block">Crop Health Score</span>
-              <span className="text-2xl font-bold font-serif text-[#14532d]">82%</span>
-              <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">Optimal vegetative state</span>
-            </div>
-            <div className="h-12 w-12 rounded-2xl bg-[#ecfdf5] text-[#15803d] flex items-center justify-center shadow-xs">
-              <Leaf className="h-6 w-6" />
-            </div>
-          </div>
+          {user.role === 'laborer' ? (
+            <>
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Available Shifts</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">{filteredJobs.length} Jobs</span>
+                  <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">Peak harvest season</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-[#ecfdf5] text-[#15803d] flex items-center justify-center shadow-xs">
+                  <Briefcase className="h-6 w-6" />
+                </div>
+              </div>
 
-          <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
-            <div>
-              <span className="text-xs text-[#55695b] font-medium block">Soil Moisture Level</span>
-              <span className="text-2xl font-bold font-serif text-[#14532d]">68%</span>
-              <span className="text-[11px] text-sky-700 font-semibold block mt-0.5">Drip automated</span>
-            </div>
-            <div className="h-12 w-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shadow-xs">
-              <Droplets className="h-6 w-6" />
-            </div>
-          </div>
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Avg Daily Wage</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">₹750</span>
+                  <span className="text-[11px] text-sky-700 font-semibold block mt-0.5">Prompt DBT settlement</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shadow-xs">
+                  <IndianRupee className="h-6 w-6" />
+                </div>
+              </div>
 
-          <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
-            <div>
-              <span className="text-xs text-[#55695b] font-medium block">Atmospheric Weather</span>
-              <span className="text-2xl font-bold font-serif text-[#14532d]">27°C</span>
-              <span className="text-[11px] text-amber-700 font-semibold block mt-0.5">Dry humidity for harvest</span>
-            </div>
-            <div className="h-12 w-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-xs">
-              <CloudSun className="h-6 w-6" />
-            </div>
-          </div>
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Field Weather</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">27°C</span>
+                  <span className="text-[11px] text-amber-700 font-semibold block mt-0.5">Clear outdoor shift</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-xs">
+                  <CloudSun className="h-6 w-6" />
+                </div>
+              </div>
 
-          <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
-            <div>
-              <span className="text-xs text-[#55695b] font-medium block">Wheat APMC Rate</span>
-              <span className="text-2xl font-bold font-serif text-[#14532d]">₹3,200</span>
-              <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">+₹70/Q this week</span>
-            </div>
-            <div className="h-12 w-12 rounded-2xl bg-[#ecfdf5] text-[#15803d] flex items-center justify-center shadow-xs">
-              <TrendingUp className="h-6 w-6" />
-            </div>
-          </div>
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Worker Status</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">Verified</span>
+                  <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">DBT Bank Linked</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-[#ecfdf5] text-[#15803d] flex items-center justify-center shadow-xs">
+                  <UserCheck className="h-6 w-6" />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Crop Health Score</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">82%</span>
+                  <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">Optimal vegetative state</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-[#ecfdf5] text-[#15803d] flex items-center justify-center shadow-xs">
+                  <Leaf className="h-6 w-6" />
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Soil Moisture Level</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">68%</span>
+                  <span className="text-[11px] text-sky-700 font-semibold block mt-0.5">Drip automated</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shadow-xs">
+                  <Droplets className="h-6 w-6" />
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Atmospheric Weather</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">27°C</span>
+                  <span className="text-[11px] text-amber-700 font-semibold block mt-0.5">Dry humidity for harvest</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-xs">
+                  <CloudSun className="h-6 w-6" />
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm p-5 rounded-2xl border border-[#d8e5da] shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-[#55695b] font-medium block">Wheat APMC Rate</span>
+                  <span className="text-2xl font-bold font-serif text-[#14532d]">₹3,200</span>
+                  <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">+₹70/Q this week</span>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-[#ecfdf5] text-[#15803d] flex items-center justify-center shadow-xs">
+                  <TrendingUp className="h-6 w-6" />
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* AI Advisory */}
@@ -1068,49 +1127,146 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Harvest Yields & Seasonal Mandi Demand Recharts Line Chart */}
-        <HarvestYieldDemandChart />
-
         {/* Dashboard Navigation Tabs */}
         <div className="flex items-center gap-2 mb-6 border-b border-[#e6ebe7] pb-3 overflow-x-auto no-scrollbar">
-          <button
-            onClick={() => setActiveTab('jobs')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-              activeTab === 'jobs' 
-                ? 'bg-[#183925] text-white shadow-sm' 
-                : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
-            }`}
-          >
-            <Briefcase className="h-3.5 w-3.5" />
-            <span>{user.role === 'farmer' ? 'Job Postings & Applicants' : 'Available Harvest Jobs & GPS'}</span>
-          </button>
+          {user.role === 'laborer' ? (
+            <>
+              <button
+                onClick={() => setActiveTab('jobs')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'jobs' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <Briefcase className="h-3.5 w-3.5" />
+                <span>Available Jobs ({filteredJobs.length})</span>
+              </button>
 
-          {(user.role === 'farmer' || user.role === 'admin') && (
-            <button
-              onClick={() => setActiveTab('products')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                activeTab === 'products' 
-                  ? 'bg-[#183925] text-white shadow-sm' 
-                  : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
-              }`}
-            >
-              <Package className="h-3.5 w-3.5" />
-              <span>Produce Sales & Orders ({products.length} Active)</span>
-            </button>
-          )}
+              <button
+                onClick={() => setActiveTab('location')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'location' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                <span>Farm Locations & GPS</span>
+              </button>
 
-          {user.role === 'admin' && (
-            <button
-              onClick={() => setActiveTab('admin')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                activeTab === 'admin' 
-                  ? 'bg-[#183925] text-white shadow-sm' 
-                  : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
-              }`}
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>APMC State Admin Oversight</span>
-            </button>
+              <button
+                onClick={() => setActiveTab('products')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'products' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <Package className="h-3.5 w-3.5" />
+                <span>Produce & Mandi Rates ({products.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('earnings')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'earnings' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <CreditCard className="h-3.5 w-3.5" />
+                <span>My Work & Wages</span>
+              </button>
+            </>
+          ) : user.role === 'farmer' ? (
+            <>
+              <button
+                onClick={() => setActiveTab('jobs')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'jobs' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <Briefcase className="h-3.5 w-3.5" />
+                <span>Post Jobs & Workforce</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('products')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'products' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <Package className="h-3.5 w-3.5" />
+                <span>Product Listing & Sales ({products.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('yields')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'yields' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span>Harvest Yields & Demand</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setActiveTab('jobs')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'jobs' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <Briefcase className="h-3.5 w-3.5" />
+                <span>Field Job Postings</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('products')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'products' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <Package className="h-3.5 w-3.5" />
+                <span>Produce Orders</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('yields')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'yields' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span>Market Yields</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('admin')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                  activeTab === 'admin' 
+                    ? 'bg-[#183925] text-white shadow-sm' 
+                    : 'bg-white text-[#55695b] hover:bg-gray-100 border border-[#d8e0d9]'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span>APMC State Admin Oversight</span>
+              </button>
+            </>
           )}
         </div>
 
@@ -1508,7 +1664,273 @@ export default function Dashboard() {
         )}
 
         {/* ============================================================ */}
-        {/* TAB 2: PRODUCE SALES & ORDERS DASHBOARD (FOR FARMER)         */}
+        {/* TAB 2: FARM LOCATIONS & GPS NAVIGATION (FOR LABORER)         */}
+        {/* ============================================================ */}
+        {activeTab === 'location' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-3xl border border-[#e6ebe7] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-[#2d6a4f] block mb-1">
+                  Field GPS Routing & Destination Explorer
+                </span>
+                <h2 className="text-2xl font-serif text-[#183925] font-bold">
+                  Farm Locations & Turn-by-Turn Guidance
+                </h2>
+                <p className="text-xs text-[#55695b] mt-0.5">
+                  View verified farm coordinates across Maharashtra, measure distance from your current location, and open turn-by-turn navigation.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLocateUser}
+                  disabled={locatingUser}
+                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-60"
+                >
+                  <Navigation className={`h-3.5 w-3.5 text-emerald-700 ${locatingUser ? 'animate-spin' : ''}`} />
+                  <span>{locatingUser ? 'Locating Device...' : 'Refresh My GPS'}</span>
+                </button>
+                <span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-full font-bold">
+                  {gpsStatusLabel}
+                </span>
+              </div>
+            </div>
+
+            {/* Farm Area Filter */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-[#e6ebe7]">
+              <div className="flex items-center gap-2 text-xs font-bold text-[#183925]">
+                <Filter className="h-3.5 w-3.5 text-[#2d6a4f]" />
+                <span>Filter By Farm Region:</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {['All', 'Nashik', 'Pune', 'Baramati', 'Latur'].map(area => (
+                  <button
+                    key={area}
+                    onClick={() => setAreaFilter(area)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                      areaFilter === area
+                        ? 'bg-[#2d6a4f] text-white'
+                        : 'bg-[#f4f7f4] text-[#55695b] hover:bg-gray-200'
+                    }`}
+                  >
+                    {area}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Farm Locations & GPS Map Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left: Farm Directory List */}
+              <div className="lg:col-span-5 space-y-3 max-h-[640px] overflow-y-auto pr-1">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider px-1">
+                  Active Farm Destinations ({filteredJobs.length})
+                </h3>
+
+                {filteredJobs.map((farm) => {
+                  const isSelected = selectedJobMap?.id === farm.id;
+                  const distanceKm = calculateHaversineDistance(userGps[0], userGps[1], farm.lat, farm.lng);
+                  return (
+                    <div
+                      key={farm.id}
+                      onClick={() => setSelectedJobMap(farm)}
+                      className={`p-4 rounded-2xl border transition cursor-pointer ${
+                        isSelected 
+                          ? 'bg-[#f2f7f3] border-[#2d6a4f] ring-2 ring-[#2d6a4f]/20 shadow-xs' 
+                          : 'bg-white border-[#e6ebe7] hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start gap-2 mb-1">
+                        <h4 className="font-bold text-sm text-[#183925]">{farm.title}</h4>
+                        <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md shrink-0">
+                          ₹{farm.pay}/day
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-[#55695b] flex items-center gap-1 mb-2">
+                        <MapPin className="h-3 w-3 text-red-500 shrink-0" />
+                        <span>{farm.location}</span>
+                      </p>
+
+                      <div className="flex items-center justify-between text-[11px] pt-2 border-t border-gray-100">
+                        <span className="text-gray-500">
+                          Approx. <strong className="text-[#183925]">{distanceKm.toFixed(1)} km</strong> away
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDestinationJob(farm);
+                            }}
+                            className="bg-[#14532d] text-white px-2.5 py-1 rounded-lg font-bold hover:bg-[#166534] transition flex items-center gap-1"
+                          >
+                            <Navigation className="h-3 w-3 text-amber-300" />
+                            <span>In-Site Nav</span>
+                          </button>
+                          <a
+                            href={getGoogleMapsDirectionsUrl(farm.lat, farm.lng, farm.location, userGps[0], userGps[1])}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2 py-1 rounded-lg font-bold transition flex items-center gap-1"
+                            title="Open Google Maps"
+                          >
+                            <ArrowUpRight className="h-3 w-3 text-amber-700" />
+                            <span>Maps</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Right: Map & Direction Instructions */}
+              <div className="lg:col-span-7 space-y-4">
+                <div className="bg-white rounded-3xl shadow-sm border border-[#e6ebe7] overflow-hidden">
+                  <div className="p-4 border-b border-[#e9eae5] bg-[#fcfdfc] flex justify-between items-center">
+                    <span className="text-xs font-bold text-[#183925] flex items-center gap-1.5">
+                      <Layers className="h-4 w-4 text-[#2d6a4f]" />
+                      Interactive Field Satellite & Road View
+                    </span>
+                    {selectedJobMap && (
+                      <span className="text-xs text-[#2d6a4f] font-bold">
+                        Target: {selectedJobMap.location}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="h-[400px] w-full bg-gray-100 relative z-0">
+                    <MapContainer 
+                      center={selectedJobMap ? [selectedJobMap.lat, selectedJobMap.lng] : userGps} 
+                      zoom={selectedJobMap ? 11 : 9} 
+                      scrollWheelZoom={false} 
+                      className="h-full w-full"
+                    >
+                      <DashboardMapController selectedJob={selectedJobMap} userLocation={userGps} />
+
+                      <TileLayer 
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+                      />
+                      
+                      {filteredJobs.map(farm => (
+                        <Marker 
+                          key={farm.id} 
+                          position={[farm.lat, farm.lng]}
+                          eventHandlers={{
+                            click: () => setSelectedJobMap(farm)
+                          }}
+                        >
+                          <Popup>
+                            <div className="p-1 text-xs">
+                              <strong className="text-[#183925] text-sm block font-bold">{farm.title}</strong>
+                              <span className="text-gray-600 block mt-0.5">{farm.location}</span>
+                              <span className="text-emerald-700 font-bold block my-1">Wage: ₹{farm.pay}/day</span>
+                              <div className="flex items-center gap-1.5 pt-1.5 border-t border-gray-200">
+                                <button
+                                  onClick={() => setActiveDestinationJob(farm)}
+                                  className="text-[10px] bg-[#14532d] text-white px-2 py-1 rounded-md font-bold hover:bg-[#166534] transition"
+                                >
+                                  In-Site Nav
+                                </button>
+                                <a
+                                  href={getGoogleMapsDirectionsUrl(farm.lat, farm.lng, farm.location, userGps[0], userGps[1])}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] bg-amber-50 text-amber-800 border border-amber-300 px-2 py-1 rounded-md font-bold hover:bg-amber-100 transition inline-flex items-center gap-0.5"
+                                >
+                                  <span>Google Maps</span>
+                                </a>
+                              </div>
+                            </div>
+                          </Popup>
+                        </Marker>
+                      ))}
+
+                      {/* User Current Position Marker */}
+                      <Marker position={userGps}>
+                        <Popup>
+                          <div className="p-1 text-xs">
+                            <strong className="text-emerald-900 block font-bold">Your Location</strong>
+                            <span className="text-gray-600 text-[10px] block mt-0.5">
+                              {user?.location || 'Base Coordinates'}
+                            </span>
+                          </div>
+                        </Popup>
+                      </Marker>
+
+                      {/* Polyline Route */}
+                      {selectedJobMap && (
+                        <Polyline 
+                          positions={[userGps, [selectedJobMap.lat, selectedJobMap.lng]]}
+                          color="#16a34a"
+                          weight={4}
+                          dashArray="6, 8"
+                        />
+                      )}
+                    </MapContainer>
+                  </div>
+
+                  {/* Turn-by-Turn Guidance Summary */}
+                  {selectedJobMap && (
+                    <div className="p-5 bg-[#fcfdfc] border-t border-[#e9eae5]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                        <div>
+                          <h4 className="font-bold text-sm text-[#183925]">
+                            Route to {selectedJobMap.title} ({selectedJobMap.location})
+                          </h4>
+                          <span className="text-xs text-[#55695b]">
+                            Total Distance: <strong className="text-[#183925]">{calculateHaversineDistance(userGps[0], userGps[1], selectedJobMap.lat, selectedJobMap.lng).toFixed(1)} km</strong> • Approx travel time: ~{Math.round(calculateHaversineDistance(userGps[0], userGps[1], selectedJobMap.lat, selectedJobMap.lng) * 2.2)} mins (Tractor / Bus)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setActiveDestinationJob(selectedJobMap)}
+                            className="bg-[#183925] hover:bg-[#122c1d] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                          >
+                            <Navigation className="h-3.5 w-3.5 text-[#8CC63F]" />
+                            <span>Step Navigation</span>
+                          </button>
+                          <a
+                            href={getGoogleMapsDirectionsUrl(selectedJobMap.lat, selectedJobMap.lng, selectedJobMap.location, userGps[0], userGps[1])}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-amber-100 hover:bg-amber-200 text-amber-900 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 border border-amber-300"
+                          >
+                            <ArrowUpRight className="h-3.5 w-3.5 text-amber-800" />
+                            <span>Open in Google Maps</span>
+                          </a>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 text-xs text-[#55695b] bg-white p-3.5 rounded-xl border border-gray-200">
+                        <div className="flex items-center gap-2 font-medium">
+                          <span className="h-5 w-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px] shrink-0">1</span>
+                          <span>Head north toward regional highway / Taluka link road.</span>
+                        </div>
+                        <div className="flex items-center gap-2 font-medium">
+                          <span className="h-5 w-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px] shrink-0">2</span>
+                          <span>Continue onto rural village artery toward {selectedJobMap.location}.</span>
+                        </div>
+                        <div className="flex items-center gap-2 font-medium">
+                          <span className="h-5 w-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px] shrink-0">3</span>
+                          <span>Arrive at farm entrance. Report to Farm Lead / Mukadam.</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB 3: PRODUCE SALES & MANDI MARKETPLACE                     */}
         {/* ============================================================ */}
         {activeTab === 'products' && (
           <div className="space-y-8">
@@ -1517,32 +1939,37 @@ export default function Dashboard() {
             <div className="bg-white p-6 rounded-3xl border border-[#e6ebe7] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-[#2d6a4f] block mb-1">
-                  Farmer Produce Selling System
+                  {user.role === 'laborer' ? 'Mandi Produce & Wholesale Catalog' : 'Farmer Produce Selling System'}
                 </span>
                 <h2 className="text-2xl font-serif text-[#183925] font-bold">
-                  Your Harvest Stock & Incoming Orders
+                  {user.role === 'laborer' ? 'Available Farm Produce & Mandi Rates' : 'Your Harvest Stock & Incoming Orders'}
                 </h2>
                 <p className="text-xs text-[#55695b] mt-0.5">
-                  Manage grains (Wheat, Bajra, Jowar), track active buyer orders, and confirm transporter dispatch.
+                  {user.role === 'laborer' 
+                    ? 'Browse harvest grains, legumes, and produce listed by local farmers across regional mandis. Compare APMC wholesale rates and contact growers directly.'
+                    : 'Manage grains (Wheat, Bajra, Jowar), track active buyer orders, and confirm transporter dispatch.'
+                  }
                 </p>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowSellProductModal(true)}
-                  className="bg-[#183925] hover:bg-[#122c1d] text-white px-5 py-2.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                >
-                  <Plus className="h-4 w-4 text-[#8CC63F]" />
-                  <span>List New Produce</span>
-                </button>
-              </div>
+              {user.role === 'farmer' && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowSellProductModal(true)}
+                    className="bg-[#183925] hover:bg-[#122c1d] text-white px-5 py-2.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Plus className="h-4 w-4 text-[#8CC63F]" />
+                    <span>List New Produce</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Produce Inventory Grid */}
             <div>
               <h3 className="text-base font-bold text-[#183925] mb-4 flex items-center gap-2">
                 <Package className="h-4 w-4 text-[#2d6a4f]" />
-                Active Crop Inventory on Marketplace
+                {user.role === 'laborer' ? 'Listed Farm Produce in Regional Mandis' : 'Active Crop Inventory on Marketplace'}
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1595,6 +2022,19 @@ export default function Dashboard() {
                             <span className="font-bold font-mono text-[#183925]">₹{p.pricePerQuintal.toLocaleString('en-IN')}</span>
                           </div>
                         </div>
+
+                        {user.role === 'laborer' && p.sellerPhone && (
+                          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                            <span className="text-gray-600">Farmer: <strong className="text-[#183925]">{p.sellerName || 'Local Producer'}</strong></span>
+                            <a
+                              href={`tel:${p.sellerPhone}`}
+                              className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-lg border border-emerald-300 flex items-center gap-1 transition"
+                            >
+                              <Phone className="h-3 w-3" />
+                              <span>Call Farmer</span>
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1608,71 +2048,250 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Incoming Orders Table */}
+            {/* Incoming Orders Table (For Farmer & Admin) */}
+            {(user.role === 'farmer' || user.role === 'admin') && (
+              <div className="bg-white rounded-3xl border border-[#e6ebe7] shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-[#e9eae5] bg-[#fcfdfc]">
+                  <h3 className="text-base font-bold text-[#183925] flex items-center gap-2">
+                    <Truck className="h-4 w-4 text-[#2d6a4f]" />
+                    Incoming Orders from Grain Buyers & Mills
+                  </h3>
+                  <p className="text-xs text-[#55695b]">Real-time purchase commitments with delivery tracking</p>
+                </div>
+
+                <div className="divide-y divide-[#f0f3f0]">
+                  {orders.map((ord) => (
+                    <div key={ord.id} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#fafbfa]">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-mono font-bold text-gray-500">#{ord.id}</span>
+                          <h4 className="font-bold text-sm text-[#183925]">{ord.productName}</h4>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                            ord.status === 'dispatched' ? 'bg-sky-100 text-sky-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {ord.status}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-[#55695b] space-y-1">
+                          <p>Buyer: <strong className="text-[#183925]">{ord.buyerName}</strong> ({ord.buyerPhone})</p>
+                          <div className="flex items-center flex-wrap gap-2">
+                            <span>Destination: {ord.deliveryAddress} • {ord.deliveryType === 'farm_pickup' ? 'Farm-Gate Pickup' : 'Mandi Transport'}</span>
+                            <a
+                              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.deliveryAddress)}&travelmode=driving`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 transition"
+                              title="Open Google Maps route to delivery destination"
+                            >
+                              <ArrowUpRight className="h-3 w-3 text-amber-700" />
+                              <span>Route in Google Maps</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <span className="text-xs text-gray-500 block">{ord.quantityKg} kg ({ord.quantityKg / 100} Qtl)</span>
+                          <span className="text-base font-bold text-[#2d6a4f] font-mono">
+                            ₹{ord.totalAmount.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+
+                        {ord.status === 'confirmed' && (
+                          <button
+                            onClick={() => handleUpdateOrderStatus(ord.id, 'dispatched')}
+                            className="bg-[#183925] hover:bg-[#122c1d] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                          >
+                            <Truck className="h-3 w-3" />
+                            <span>Dispatch Stock</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB 4: HARVEST YIELDS & DEMAND (FOR FARMER & ADMIN)          */}
+        {/* ============================================================ */}
+        {activeTab === 'yields' && (
+          <div className="space-y-6">
+            <HarvestYieldDemandChart />
+
+            {/* Regional Mandi Volumes */}
+            <div className="bg-white rounded-3xl border border-[#e6ebe7] shadow-sm p-6">
+              <h3 className="text-base font-bold text-[#183925] mb-4">
+                Regional APMC Mandi Arrivals & MSP Benchmarks
+              </h3>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="border-b border-[#e9eae5] text-[#55695b] font-semibold">
+                      <th className="pb-3">Mandi Yard</th>
+                      <th className="pb-3">Primary Produce</th>
+                      <th className="pb-3">Today's Arrival</th>
+                      <th className="pb-3">Current Rate</th>
+                      <th className="pb-3">MSP Benchmark</th>
+                      <th className="pb-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f0f4f1]">
+                    <tr>
+                      <td className="py-3 font-bold text-[#183925]">Nashik Mandi Yard</td>
+                      <td>Sharbati Wheat & Red Onion</td>
+                      <td>8,400 Quintals</td>
+                      <td className="font-bold text-[#2d6a4f]">₹3,200 / Qtl</td>
+                      <td>₹2,275 / Qtl</td>
+                      <td><span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold">Active</span></td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 font-bold text-[#183925]">Baramati APMC</td>
+                      <td>Hybrid Bajra & Green Fodder</td>
+                      <td>5,800 Quintals</td>
+                      <td className="font-bold text-[#2d6a4f]">₹2,600 / Qtl</td>
+                      <td>₹2,500 / Qtl</td>
+                      <td><span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold">Active</span></td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 font-bold text-[#183925]">Solapur APMC</td>
+                      <td>Maldandi Jowar (White)</td>
+                      <td>4,200 Quintals</td>
+                      <td className="font-bold text-[#2d6a4f]">₹4,200 / Qtl</td>
+                      <td>₹3,180 / Qtl</td>
+                      <td><span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold">Active</span></td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 font-bold text-[#183925]">Latur Mandi Board</td>
+                      <td>Yellow Soybean & Toor Dal</td>
+                      <td>12,500 Quintals</td>
+                      <td className="font-bold text-[#2d6a4f]">₹4,800 / Qtl</td>
+                      <td>₹4,600 / Qtl</td>
+                      <td><span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold">Active</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB 5: MY WORK & WAGES (FOR LABORER)                         */}
+        {/* ============================================================ */}
+        {activeTab === 'earnings' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-3xl border border-[#e6ebe7] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-[#2d6a4f] block mb-1">
+                  Gramonnati Verified Labor Ledger
+                </span>
+                <h2 className="text-2xl font-serif text-[#183925] font-bold">
+                  My Work Shifts & Wage Earnings
+                </h2>
+                <p className="text-xs text-[#55695b] mt-0.5">
+                  Track your completed harvest days, verified wages earned, pending payouts, and Direct Benefit Transfer (DBT) records.
+                </p>
+              </div>
+
+              <button
+                onClick={downloadWorkerDossier}
+                className="bg-[#14532d] hover:bg-[#166534] text-white px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 shadow-sm self-start md:self-auto"
+              >
+                <Download className="h-3.5 w-3.5 text-[#fde047]" />
+                <span>Download Worker Dossier PDF</span>
+              </button>
+            </div>
+
+            {/* Earnings Stat Blocks */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="p-5 rounded-2xl bg-white border border-[#e6ebe7] shadow-xs">
+                <span className="text-xs text-[#55695b] font-medium block">Total Wages Earned</span>
+                <span className="text-2xl font-bold font-serif text-[#14532d]">₹18,400</span>
+                <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">Direct into bank</span>
+              </div>
+              <div className="p-5 rounded-2xl bg-white border border-[#e6ebe7] shadow-xs">
+                <span className="text-xs text-[#55695b] font-medium block">Shifts Completed</span>
+                <span className="text-2xl font-bold font-serif text-[#14532d]">24 Days</span>
+                <span className="text-[11px] text-sky-700 font-semibold block mt-0.5">Harvest season 2026</span>
+              </div>
+              <div className="p-5 rounded-2xl bg-white border border-[#e6ebe7] shadow-xs">
+                <span className="text-xs text-[#55695b] font-medium block">Pending Settlement</span>
+                <span className="text-2xl font-bold font-serif text-amber-800">₹2,100</span>
+                <span className="text-[11px] text-amber-700 font-semibold block mt-0.5">3 shifts verifying</span>
+              </div>
+              <div className="p-5 rounded-2xl bg-white border border-[#e6ebe7] shadow-xs">
+                <span className="text-xs text-[#55695b] font-medium block">DBT Linked Account</span>
+                <span className="text-2xl font-bold font-serif text-[#14532d]">Verified</span>
+                <span className="text-[11px] text-[#15803d] font-semibold block mt-0.5">State Bank of India</span>
+              </div>
+            </div>
+
+            {/* Applications & Shifts History Table */}
             <div className="bg-white rounded-3xl border border-[#e6ebe7] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#e9eae5] bg-[#fcfdfc]">
                 <h3 className="text-base font-bold text-[#183925] flex items-center gap-2">
-                  <Truck className="h-4 w-4 text-[#2d6a4f]" />
-                  Incoming Orders from Grain Buyers & Mills
+                  <Briefcase className="h-4 w-4 text-[#2d6a4f]" />
+                  Your Field Shift Applications & Work History
                 </h3>
-                <p className="text-xs text-[#55695b]">Real-time purchase commitments with delivery tracking</p>
+                <p className="text-xs text-[#55695b]">Real-time status of harvest shifts applied and accepted</p>
               </div>
 
               <div className="divide-y divide-[#f0f3f0]">
-                {orders.map((ord) => (
-                  <div key={ord.id} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#fafbfa]">
+                {applications.map((app) => (
+                  <div key={app.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#fafbfa]">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-mono font-bold text-gray-500">#{ord.id}</span>
-                        <h4 className="font-bold text-sm text-[#183925]">{ord.productName}</h4>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                          ord.status === 'dispatched' ? 'bg-sky-100 text-sky-800' : 'bg-emerald-100 text-emerald-800'
+                        <h4 className="font-bold text-sm text-[#183925]">{app.jobTitle}</h4>
+                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
+                          app.status === 'accepted' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                         }`}>
-                          {ord.status}
+                          {app.status}
                         </span>
                       </div>
-
-                      <div className="text-xs text-[#55695b] space-y-1">
-                        <p>Buyer: <strong className="text-[#183925]">{ord.buyerName}</strong> ({ord.buyerPhone})</p>
-                        <div className="flex items-center flex-wrap gap-2">
-                          <span>Destination: {ord.deliveryAddress} • {ord.deliveryType === 'farm_pickup' ? 'Farm-Gate Pickup' : 'Mandi Transport'}</span>
-                          <a
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.deliveryAddress)}&travelmode=driving`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 transition"
-                            title="Open Google Maps route to delivery destination"
-                          >
-                            <ArrowUpRight className="h-3 w-3 text-amber-700" />
-                            <span>Route in Google Maps</span>
-                          </a>
-                        </div>
-                      </div>
+                      <span className="text-xs text-[#55695b] block">
+                        Location: <strong>{app.jobLocation}</strong> • Applied: {new Date(app.appliedAt).toLocaleDateString()}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 self-end sm:self-auto">
                       <div className="text-right">
-                        <span className="text-xs text-gray-500 block">{ord.quantityKg} kg ({ord.quantityKg / 100} Qtl)</span>
-                        <span className="text-base font-bold text-[#2d6a4f] font-mono">
-                          ₹{ord.totalAmount.toLocaleString('en-IN')}
-                        </span>
+                        <span className="text-[11px] text-gray-500 block">Agreed Wage:</span>
+                        <span className="font-bold font-mono text-[#2d6a4f] text-sm">₹{app.dailyWage}/day</span>
                       </div>
 
-                      {ord.status === 'confirmed' && (
+                      {app.jobId && (
                         <button
-                          onClick={() => handleUpdateOrderStatus(ord.id, 'dispatched')}
-                          className="bg-[#183925] hover:bg-[#122c1d] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                          onClick={() => {
+                            const foundJob = jobs.find(j => j.id === app.jobId);
+                            if (foundJob) {
+                              setActiveDestinationJob(foundJob);
+                            }
+                          }}
+                          className="text-xs bg-[#14532d] hover:bg-[#166534] text-white px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1"
                         >
-                          <Truck className="h-3 w-3" />
-                          <span>Dispatch Stock</span>
+                          <Navigation className="h-3 w-3 text-amber-300" />
+                          <span>GPS Route</span>
                         </button>
                       )}
                     </div>
                   </div>
                 ))}
+
+                {applications.length === 0 && (
+                  <div className="p-8 text-center text-gray-400 text-xs">
+                    No active job applications found. Browse the <strong className="text-[#183925]">Available Jobs</strong> tab to apply for upcoming harvest shifts!
+                  </div>
+                )}
               </div>
             </div>
-
           </div>
         )}
 

@@ -41,7 +41,12 @@ import {
   isProfileCompleted, 
   normalizeEmail, 
   getLocalRegisteredAccounts, 
-  saveLocalRegisteredAccount 
+  saveLocalRegisteredAccount,
+  getRegisteredRoleForEmail,
+  checkRoleConflict,
+  DEFAULT_ADMIN_CREDENTIALS,
+  DEFAULT_ADMIN_PROFILE,
+  isDefaultAdmin
 } from '../lib/userStore';
 
 export default function Login() {
@@ -96,9 +101,17 @@ export default function Login() {
     }
   }, []);
 
+  // Quick autofill when selecting Mandi Admin
+  const handleSelectAdminRole = () => {
+    setRole('admin');
+    setEmail(DEFAULT_ADMIN_CREDENTIALS.email);
+    setPassword(DEFAULT_ADMIN_CREDENTIALS.password);
+  };
+
   /**
    * Unified, ultra-fast login & register processor.
-   * Checks both local cache and Firestore to NEVER overwrite completed profile data.
+   * Keeps Farmer, Laborer, and Admin profiles completely separated so one account can
+   * hold distinct records without overwriting.
    */
   const handleAuthSuccess = async (
     userObj: { uid: string; displayName?: string | null; email?: string | null }, 
@@ -107,51 +120,80 @@ export default function Login() {
     explicitName?: string
   ) => {
     const normalizedEmail = normalizeEmail(userObj.email || email);
-    
-    // Fast lookup of any existing stored profile across localStorage & Firestore
-    const existingProfile = await findStoredProfile(normalizedEmail, userObj.uid);
-    const localAccounts = getLocalRegisteredAccounts();
-    const existingLocal = localAccounts[normalizedEmail];
 
-    const hasCompletedBefore = isProfileCompleted(existingProfile) || existingLocal?.profileCompleted === true;
-    const isNew = forceNewUser && !hasCompletedBefore && !existingProfile;
+    // If Admin role or matching default admin credentials
+    if (userRole === 'admin' || isDefaultAdmin(normalizedEmail)) {
+      saveUserProfile(DEFAULT_ADMIN_PROFILE, 'admin');
+      saveLocalRegisteredAccount(DEFAULT_ADMIN_CREDENTIALS.email, {
+        uid: DEFAULT_ADMIN_PROFILE.id,
+        name: DEFAULT_ADMIN_PROFILE.name,
+        email: DEFAULT_ADMIN_CREDENTIALS.email,
+        password: DEFAULT_ADMIN_CREDENTIALS.password,
+        role: 'admin',
+        profileCompleted: true,
+        emailVerified: true,
+        profileData: DEFAULT_ADMIN_PROFILE
+      });
+      setLoading(false);
+      navigate('/dashboard');
+      return;
+    }
+    
+    // Fast lookup of role-specific stored profile
+    const existingRoleProfile = await findStoredProfile(normalizedEmail, userObj.uid, userRole);
+    const localAccounts = getLocalRegisteredAccounts();
+    const existingAccount = localAccounts[normalizedEmail];
+    const existingRoleData = existingAccount?.role === userRole ? existingAccount.profileData : undefined;
+
+    const hasCompletedBefore = isProfileCompleted(existingRoleProfile) || isProfileCompleted(existingRoleData);
+    const isNew = forceNewUser && !hasCompletedBefore && !existingRoleProfile;
 
     // Resolve Name
     const resolvedName = explicitName?.trim() 
-      || existingProfile?.name 
-      || existingLocal?.name 
+      || existingRoleProfile?.name 
+      || existingRoleData?.name 
+      || existingAccount?.name 
       || userObj.displayName 
       || (userRole === 'farmer' ? 'Kisan Member' : userRole === 'laborer' ? 'Agricultural Worker' : 'APMC Administrator');
 
-    const resolvedRole: UserRole = existingProfile?.role || existingLocal?.role || userRole;
     const isGoogleVerified = (userObj as any).emailVerified ?? false;
     const isFirebaseVerified = auth.currentUser?.emailVerified ?? false;
-    const resolvedEmailVerified = isGoogleVerified || isFirebaseVerified || existingProfile?.emailVerified || existingLocal?.emailVerified || false;
+    const resolvedEmailVerified = isGoogleVerified || isFirebaseVerified || existingRoleProfile?.emailVerified || existingAccount?.emailVerified || false;
 
-    // Merge existing profile so we NEVER lose fields (farmName, crops, bank details, skills)
+    // Build role-isolated user profile
     const baseUserData: UserProfile = {
-      ...(existingProfile || {}),
-      id: userObj.uid,
+      ...(existingRoleProfile || existingRoleData || {}),
+      id: `${userObj.uid}-${userRole}`,
       name: resolvedName,
       email: normalizedEmail,
-      role: resolvedRole,
-      location: existingProfile?.location || existingLocal?.profileData?.location || (resolvedRole === 'farmer' ? 'Niphad, Nashik, Maharashtra' : resolvedRole === 'laborer' ? 'Baramati, Pune, Maharashtra' : 'Pune APMC Yard, Maharashtra'),
-      district: existingProfile?.district || existingLocal?.profileData?.district || (resolvedRole === 'farmer' ? 'Nashik' : 'Pune'),
-      taluka: existingProfile?.taluka || existingLocal?.profileData?.taluka || (resolvedRole === 'farmer' ? 'Niphad' : 'Baramati'),
-      profileCompleted: hasCompletedBefore ? true : (isNew ? false : (existingProfile?.profileCompleted ?? true)),
+      role: userRole,
+      location: existingRoleProfile?.location || existingRoleData?.location || existingAccount?.profileData?.location || (userRole === 'farmer' ? 'Niphad, Nashik, Maharashtra' : userRole === 'laborer' ? 'Baramati, Pune, Maharashtra' : 'Pune APMC Yard, Maharashtra'),
+      district: existingRoleProfile?.district || existingRoleData?.district || existingAccount?.profileData?.district || (userRole === 'farmer' ? 'Nashik' : 'Pune'),
+      taluka: existingRoleProfile?.taluka || existingRoleData?.taluka || existingAccount?.profileData?.taluka || (userRole === 'farmer' ? 'Niphad' : 'Baramati'),
+      profileCompleted: hasCompletedBefore ? true : (isNew ? false : (existingRoleProfile?.profileCompleted ?? true)),
       emailVerified: resolvedEmailVerified,
-      createdAt: existingProfile?.createdAt || existingLocal?.createdAt || new Date().toISOString()
+      createdAt: existingRoleProfile?.createdAt || existingAccount?.createdAt || new Date().toISOString()
     };
 
-    // Universally persist profile (localStorage + dual-index Firestore)
-    const saved = saveUserProfile(baseUserData);
+    // Specific field initialization if missing
+    if (userRole === 'laborer' && !baseUserData.skills) {
+      baseUserData.skills = 'Harvesting, Wheat Threshing, Grape Pruning';
+      baseUserData.expectedWage = baseUserData.expectedWage || 650;
+      baseUserData.availability = baseUserData.availability || 'available';
+    } else if (userRole === 'farmer' && !baseUserData.farmName) {
+      baseUserData.farmName = baseUserData.farmName || `${resolvedName}'s Farm`;
+      baseUserData.crops = baseUserData.crops || 'Wheat, Soybean';
+    }
 
-    // Save account credentials state
+    // Universally persist profile (localStorage + role-segregated Firestore)
+    const saved = saveUserProfile(baseUserData, userRole);
+
+    // Save account credentials state with permanent role lock
     saveLocalRegisteredAccount(normalizedEmail, {
       uid: userObj.uid,
       name: resolvedName,
       email: normalizedEmail,
-      role: resolvedRole,
+      role: userRole,
       profileCompleted: saved.profileCompleted,
       emailVerified: resolvedEmailVerified,
       profileData: saved
@@ -177,6 +219,33 @@ export default function Login() {
     const cleanPassword = password;
     const cleanName = name.trim();
 
+    // ================================================================
+    // 0. MANDI ADMIN DEFAULT LOGIN CHECK
+    // Email: gramonatti26@gmail.com, Password: GRAMONATTI
+    // ================================================================
+    if (
+      isDefaultAdmin(cleanEmail, cleanPassword) || 
+      (role === 'admin' && (cleanEmail === DEFAULT_ADMIN_CREDENTIALS.email || cleanPassword.toUpperCase() === DEFAULT_ADMIN_CREDENTIALS.password))
+    ) {
+      saveUserProfile(DEFAULT_ADMIN_PROFILE, 'admin');
+      saveLocalRegisteredAccount(DEFAULT_ADMIN_CREDENTIALS.email, {
+        uid: DEFAULT_ADMIN_PROFILE.id,
+        name: DEFAULT_ADMIN_PROFILE.name,
+        email: DEFAULT_ADMIN_CREDENTIALS.email,
+        password: DEFAULT_ADMIN_CREDENTIALS.password,
+        role: 'admin',
+        profileCompleted: true,
+        emailVerified: true,
+        profileData: DEFAULT_ADMIN_PROFILE
+      });
+      setSuccessInfo('Authenticated as Mandi APMC Directorate Administrator.');
+      setTimeout(() => {
+        setLoading(false);
+        navigate('/dashboard');
+      }, 150);
+      return;
+    }
+
     // Client-side validation
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setError('Please enter a valid email address.');
@@ -190,16 +259,37 @@ export default function Login() {
       return;
     }
 
+    // =========================================================================
+    // 1. STRICT ROLE ISOLATION & CONFLICT VERIFICATION
+    // A Laborer CANNOT register as a Farmer, and vice versa!
+    // =========================================================================
+    const conflict = await checkRoleConflict(cleanEmail, role);
+    if (conflict.hasConflict) {
+      setError(conflict.message || `Account Conflict: This email is already registered under a different role. In Gramonnati, Farmer and Laborer accounts are strictly separated.`);
+      setLoading(false);
+      return;
+    }
+
     // ==========================================
-    // 1. SIGN IN FLOW (isLogin === true)
+    // 2. SIGN IN FLOW (isLogin === true)
     // ==========================================
     if (isLogin) {
+      // Check if user is trying to log in with wrong role
+      const registeredRole = await getRegisteredRoleForEmail(cleanEmail);
+      if (registeredRole && registeredRole !== role) {
+        const regLabel = registeredRole === 'laborer' ? 'Laborer (Shramik)' : registeredRole === 'farmer' ? 'Farmer (Kisan)' : 'APMC Admin';
+        const chosenLabel = role === 'laborer' ? 'Laborer' : role === 'farmer' ? 'Farmer' : 'Admin';
+        setError(`Account Role Mismatch: This account is registered as a ${regLabel}. You cannot log in under the ${chosenLabel} role. Please select ${regLabel} above to sign in.`);
+        setLoading(false);
+        return;
+      }
+
       try {
         // Fast attempt with Firebase Auth
         const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
         
         // Remember password locally for cross-login support
-        saveLocalRegisteredAccount(cleanEmail, { password: cleanPassword });
+        saveLocalRegisteredAccount(cleanEmail, { password: cleanPassword, role });
 
         await handleAuthSuccess(
           userCredential.user, 
@@ -216,6 +306,12 @@ export default function Login() {
         const existingLocal = localAccounts[cleanEmail];
 
         if (existingLocal) {
+          if (existingLocal.role && existingLocal.role !== role) {
+            setError(`This account is permanently registered as a ${existingLocal.role === 'laborer' ? 'Laborer (Shramik)' : 'Farmer (Kisan)'}. You cannot sign in as a ${role}.`);
+            setLoading(false);
+            return;
+          }
+
           // If password matches local record or password was newly provided for a Google account
           if (existingLocal.password && existingLocal.password !== cleanPassword) {
             setError('Incorrect password for this account. Please re-enter your password.');
@@ -225,12 +321,12 @@ export default function Login() {
 
           // If this account was originally created with Google, allow sign in and update password
           if (existingLocal.signedUpWithGoogle) {
-            saveLocalRegisteredAccount(cleanEmail, { password: cleanPassword });
+            saveLocalRegisteredAccount(cleanEmail, { password: cleanPassword, role });
           }
 
           await handleAuthSuccess(
             { uid: existingLocal.uid || `user-${Date.now()}`, email: cleanEmail, displayName: existingLocal.name },
-            existingLocal.role || role,
+            role,
             false,
             existingLocal.name
           );
@@ -239,13 +335,13 @@ export default function Login() {
 
         // Firebase-specific readable error messages:
         if (authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/wrong-password') {
-          setError('Incorrect email or password. If you originally signed up with Google, use "Sign In with Google" below.');
+          setError('Incorrect credentials. If you are registering a new user, click "Create Account" above.');
         } else if (authErr.code === 'auth/user-not-found') {
-          setError('No account found with this email. Click "Create Account" above to register instantly.');
+          setError('No account found with this email. Click "Create Account" above to register.');
         } else if (authErr.code === 'auth/too-many-requests') {
           setError('Too many failed attempts. Please wait a moment and try again.');
         } else if (authErr.code === 'auth/network-request-failed') {
-          setError('Network issue. Check your connection or use Quick Demo Login.');
+          setError('Network issue. Check your connection or use Instant 1-Click Role Login.');
         } else {
           setError(authErr.message || 'Unable to sign in. Please verify your credentials.');
         }
@@ -255,7 +351,7 @@ export default function Login() {
     }
 
     // ==========================================
-    // 2. REGISTRATION FLOW (isLogin === false)
+    // 3. REGISTRATION FLOW (isLogin === false)
     // ==========================================
     if (!isLogin) {
       if (!cleanName || cleanName.length < 2) {
@@ -301,10 +397,20 @@ export default function Login() {
       } catch (regErr: any) {
         console.warn('Firebase createUser note:', regErr.code, regErr.message);
 
-        // If email already exists, switch to Sign In automatically!
+        // If email already exists in Firebase Auth, verify role before allowing anything!
         if (regErr.code === 'auth/email-already-in-use') {
+          const registeredRole = await getRegisteredRoleForEmail(cleanEmail);
+          
+          if (registeredRole && registeredRole !== role) {
+            const regLabel = registeredRole === 'laborer' ? 'Laborer (Shramik)' : registeredRole === 'farmer' ? 'Farmer (Kisan)' : 'APMC Admin';
+            setError(`Registration Blocked: This email is already registered as a ${regLabel}. One user cannot register as both Farmer and Laborer. You cannot create a ${role === 'farmer' ? 'Farmer' : 'Laborer'} account with this email. Please switch above and sign in as a ${regLabel}.`);
+            setLoading(false);
+            return;
+          }
+
+          // If existing account belongs to the same role, guide them to enter password to sign in
           setIsLogin(true);
-          setError('This email is already registered! Please enter your password or use Google Sign-In.');
+          setError(`This email is already registered as a ${role === 'farmer' ? 'Farmer (Kisan)' : 'Laborer (Shramik)'}. Please enter your password to sign in.`);
           setLoading(false);
           return;
         }
@@ -352,17 +458,36 @@ export default function Login() {
       const googleUser = result.user;
 
       const normalizedEmail = normalizeEmail(googleUser.email);
+      if (!normalizedEmail) {
+        setError('Google sign-in did not return a valid email.');
+        setLoading(false);
+        return;
+      }
+
+      // STRICT ROLE CONFLICT VERIFICATION FOR GOOGLE SIGN IN
+      const conflict = await checkRoleConflict(normalizedEmail, role);
+      if (conflict.hasConflict) {
+        await auth.signOut();
+        const existingLabel = conflict.existingRole === 'laborer' 
+          ? 'Agricultural Laborer (Shramik)' 
+          : conflict.existingRole === 'farmer' 
+          ? 'Farmer (Kisan)' 
+          : 'APMC Mandi Administrator';
+        setError(`Role Conflict: This Google account (${normalizedEmail}) is permanently registered as a ${existingLabel}. In Gramonnati, Farmer and Laborer accounts are kept completely separate. You cannot sign in or register as a ${role === 'farmer' ? 'Farmer' : 'Laborer'}. Please select ${existingLabel} above to sign in.`);
+        setLoading(false);
+        return;
+      }
       
-      // Look up existing profile to NEVER overwrite completed profile
-      const storedProfile = await findStoredProfile(normalizedEmail, googleUser.uid);
+      // Look up existing role-specific profile
+      const storedProfile = await findStoredProfile(normalizedEmail, googleUser.uid, role);
       const isNew = !storedProfile && !isProfileCompleted(storedProfile);
 
-      // Record Google sign in association
+      // Record Google sign in association with permanent role lock
       saveLocalRegisteredAccount(normalizedEmail, {
         uid: googleUser.uid,
-        name: googleUser.displayName || storedProfile?.name || 'Kisan Member',
+        name: googleUser.displayName || storedProfile?.name || (role === 'farmer' ? 'Kisan Member' : 'Agricultural Worker'),
         email: normalizedEmail,
-        role: storedProfile?.role || role,
+        role: role,
         signedUpWithGoogle: true,
         emailVerified: true,
         profileCompleted: isProfileCompleted(storedProfile)
@@ -370,7 +495,7 @@ export default function Login() {
 
       await handleAuthSuccess(
         googleUser,
-        storedProfile?.role || role,
+        role,
         isNew,
         googleUser.displayName || storedProfile?.name || undefined
       );
@@ -434,23 +559,11 @@ export default function Login() {
         profileCompleted: true,
         emailVerified: true
       },
-      admin: {
-        id: 'demo-admin-ashok',
-        uid: 'demo-admin-ashok',
-        name: 'Dr. Ashok Deshmukh',
-        email: 'admin.apmc@gramonnati.org',
-        role: 'admin' as UserRole,
-        mandiDivision: 'Maharashtra State APMC Directorate',
-        location: 'Pune APMC Mandi Yard, Gultekdi',
-        district: 'Pune',
-        phone: '+91 98220 99881',
-        profileCompleted: true,
-        emailVerified: true
-      }
+      admin: DEFAULT_ADMIN_PROFILE
     };
 
     const targetProfile = mockProfiles[demoRole] as UserProfile;
-    saveUserProfile(targetProfile);
+    saveUserProfile(targetProfile, demoRole);
     saveLocalRegisteredAccount(targetProfile.email!, {
       uid: targetProfile.id,
       name: targetProfile.name,
@@ -478,7 +591,7 @@ export default function Login() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="max-w-md w-full bg-white rounded-3xl shadow-xl shadow-[#143d24]/8 p-6 sm:p-8 border border-[#d8e5da] relative z-10"
+        className="max-w-lg w-full bg-white rounded-3xl shadow-xl shadow-[#143d24]/8 p-6 sm:p-8 border border-[#d8e5da] relative z-10"
       >
         
         {/* Brand Header */}
@@ -490,38 +603,151 @@ export default function Login() {
             Gramonnati
           </h2>
           <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">
-            Rural Rise Platform
+            Rural Rise Unified Platform
           </span>
-          <p className="text-[#496552] text-xs sm:text-sm mt-1 max-w-xs">
+          <p className="text-[#496552] text-xs sm:text-sm mt-1 max-w-sm">
             {isLogin 
-              ? 'Fast access to your farm operations, labor portal, and mandi trading.' 
-              : 'Register to manage harvest jobs, labor, and crop produce instantly.'}
+              ? 'Select your agricultural role and sign in to your dedicated portal.' 
+              : 'Choose your role and register to access farm labor, crop sales, or mandi oversight.'}
           </p>
         </div>
 
+        {/* ========================================================================= */}
+        {/* PROMINENT ROLE / PORTAL SELECTOR (Visible for BOTH Sign In and Register) */}
+        {/* ========================================================================= */}
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-[#14532d] flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5 text-[#15803d]" />
+              <span>Step 1: Choose Your Role Portal</span>
+            </label>
+            <span className="text-[11px] font-semibold text-[#55695b]">
+              Active: <strong className="text-[#14532d]">{role === 'farmer' ? '🌾 Farmer (Kisan)' : role === 'laborer' ? '🚜 Laborer (Shramik)' : '🏛️ Mandi Admin'}</strong>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {/* Farmer Card */}
+            <button
+              type="button"
+              onClick={() => {
+                setRole('farmer');
+                if (email === DEFAULT_ADMIN_CREDENTIALS.email) {
+                  setEmail('');
+                  setPassword('');
+                }
+              }}
+              className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1.5 ${
+                role === 'farmer' 
+                  ? 'bg-gradient-to-b from-[#14532d] to-[#166534] text-white border-[#14532d] shadow-sm ring-2 ring-[#15803d]/30' 
+                  : 'bg-[#fbfdfb] text-[#344e3e] border-[#d8e5da] hover:bg-[#f2f8f3] hover:border-[#b4d2bc]'
+              }`}
+            >
+              <Tractor className={`h-5 w-5 ${role === 'farmer' ? 'text-amber-300' : 'text-[#15803d]'}`} />
+              <div>
+                <span className="text-xs font-bold block">🌾 Farmer</span>
+                <span className={`text-[10px] hidden sm:block ${role === 'farmer' ? 'text-emerald-100' : 'text-gray-500'}`}>
+                  Post Jobs & Sell
+                </span>
+              </div>
+            </button>
+
+            {/* Laborer Card */}
+            <button
+              type="button"
+              onClick={() => {
+                setRole('laborer');
+                if (email === DEFAULT_ADMIN_CREDENTIALS.email) {
+                  setEmail('');
+                  setPassword('');
+                }
+              }}
+              className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1.5 ${
+                role === 'laborer' 
+                  ? 'bg-gradient-to-b from-[#14532d] to-[#166534] text-white border-[#14532d] shadow-sm ring-2 ring-[#15803d]/30' 
+                  : 'bg-[#fbfdfb] text-[#344e3e] border-[#d8e5da] hover:bg-[#f2f8f3] hover:border-[#b4d2bc]'
+              }`}
+            >
+              <Sprout className={`h-5 w-5 ${role === 'laborer' ? 'text-amber-300' : 'text-[#15803d]'}`} />
+              <div>
+                <span className="text-xs font-bold block">🚜 Laborer</span>
+                <span className={`text-[10px] hidden sm:block ${role === 'laborer' ? 'text-emerald-100' : 'text-gray-500'}`}>
+                  Harvest & Wages
+                </span>
+              </div>
+            </button>
+
+            {/* Mandi Admin Card */}
+            <button
+              type="button"
+              onClick={handleSelectAdminRole}
+              className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1.5 ${
+                role === 'admin' 
+                  ? 'bg-gradient-to-b from-[#78350f] to-[#92400e] text-white border-[#78350f] shadow-sm ring-2 ring-amber-500/30' 
+                  : 'bg-[#fbfdfb] text-[#344e3e] border-[#d8e5da] hover:bg-[#fef9ee] hover:border-amber-300'
+              }`}
+            >
+              <Building className={`h-5 w-5 ${role === 'admin' ? 'text-amber-200' : 'text-amber-700'}`} />
+              <div>
+                <span className="text-xs font-bold block">🏛️ Admin</span>
+                <span className={`text-[10px] hidden sm:block ${role === 'admin' ? 'text-amber-100' : 'text-gray-500'}`}>
+                  APMC Portal
+                </span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Mandi Admin Default Credentials Callout */}
+        {role === 'admin' && (
+          <div className="mb-4 p-3 bg-gradient-to-r from-amber-50 via-orange-50/70 to-amber-100/50 rounded-2xl border border-amber-200 shadow-xs">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                  <ShieldCheck className="h-4 w-4 text-amber-700" />
+                  <span>Maharashtra APMC Directorate Terminal</span>
+                </div>
+                <div className="mt-1 text-[11px] text-amber-800 space-y-0.5">
+                  <p>Default Login: <strong className="font-mono text-amber-950">gramonatti26@gmail.com</strong></p>
+                  <p>Default Password: <strong className="font-mono text-amber-950">GRAMONATTI</strong></p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSelectAdminRole}
+                className="shrink-0 bg-amber-800 hover:bg-amber-900 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-xs transition flex items-center gap-1"
+              >
+                <Zap className="h-3 w-3 text-amber-300" />
+                <span>Auto-Fill</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Tab Switcher: Sign In vs Create Account */}
-        <div className="grid grid-cols-2 p-1 bg-[#f0f5f1] rounded-2xl mb-5 border border-[#d8e5da]">
+        <div className="grid grid-cols-2 p-1 bg-[#f0f5f1] rounded-2xl mb-4 border border-[#d8e5da]">
           <button
             type="button"
             onClick={() => { setIsLogin(true); setError(''); setSuccessInfo(''); }}
-            className={`py-2.5 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${
+            className={`py-2 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${
               isLogin 
                 ? 'bg-[#14532d] text-white shadow-sm' 
                 : 'text-[#496552] hover:text-[#14532d]'
             }`}
           >
-            <span>Sign In</span>
+            <span>Sign In ({role === 'farmer' ? 'Kisan' : role === 'laborer' ? 'Shramik' : 'Admin'})</span>
           </button>
           <button
             type="button"
             onClick={() => { setIsLogin(false); setError(''); setSuccessInfo(''); }}
-            className={`py-2.5 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${
+            className={`py-2 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${
               !isLogin 
                 ? 'bg-[#14532d] text-white shadow-sm' 
                 : 'text-[#496552] hover:text-[#14532d]'
             }`}
           >
-            <span>Create Account</span>
+            <span>Create New {role === 'farmer' ? 'Farmer' : role === 'laborer' ? 'Laborer' : 'Admin'}</span>
           </button>
         </div>
 
@@ -552,12 +778,12 @@ export default function Login() {
         </AnimatePresence>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           
           {/* Full Name field (Register only) */}
           {!isLogin && (
             <div>
-              <label className="block text-xs font-bold text-[#14532d] mb-1.5">
+              <label className="block text-xs font-bold text-[#14532d] mb-1">
                 Full Name
               </label>
               <div className="relative">
@@ -568,7 +794,7 @@ export default function Login() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Balasaheb Patil"
+                  placeholder={role === 'farmer' ? 'e.g. Balasaheb Patil' : role === 'laborer' ? 'e.g. Santosh Shinde' : 'e.g. APMC Officer'}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#d8e5da] bg-[#fdfdfc] text-xs sm:text-sm text-[#14532d] focus:bg-white focus:border-[#15803d] focus:ring-2 focus:ring-[#15803d]/20 outline-none transition"
                   required={!isLogin}
                 />
@@ -578,9 +804,20 @@ export default function Login() {
 
           {/* Email field */}
           <div>
-            <label className="block text-xs font-bold text-[#14532d] mb-1.5">
-              Email Address
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-[#14532d]">
+                Email Address
+              </label>
+              {role === 'admin' && (
+                <button
+                  type="button"
+                  onClick={handleSelectAdminRole}
+                  className="text-[11px] text-amber-700 hover:text-amber-900 font-semibold"
+                >
+                  Use gramonatti26@gmail.com
+                </button>
+              )}
+            </div>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
                 <Mail className="h-4 w-4" />
@@ -589,7 +826,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
+                placeholder={role === 'admin' ? 'gramonatti26@gmail.com' : 'name@example.com'}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#d8e5da] bg-[#fdfdfc] text-xs sm:text-sm text-[#14532d] focus:bg-white focus:border-[#15803d] focus:ring-2 focus:ring-[#15803d]/20 outline-none transition"
                 required
               />
@@ -598,9 +835,16 @@ export default function Login() {
 
           {/* Password field */}
           <div>
-            <label className="block text-xs font-bold text-[#14532d] mb-1.5">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-[#14532d]">
+                Password
+              </label>
+              {role === 'admin' && (
+                <span className="text-[11px] font-mono text-amber-800">
+                  Default: GRAMONATTI
+                </span>
+              )}
+            </div>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
                 <Lock className="h-4 w-4" />
@@ -609,7 +853,7 @@ export default function Login() {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
+                placeholder={role === 'admin' ? 'GRAMONATTI' : 'At least 6 characters'}
                 className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-[#d8e5da] bg-[#fdfdfc] text-xs sm:text-sm text-[#14532d] focus:bg-white focus:border-[#15803d] focus:ring-2 focus:ring-[#15803d]/20 outline-none transition"
                 required
               />
@@ -623,66 +867,25 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Role selector (Register only) */}
-          {!isLogin && (
-            <div>
-              <label className="block text-xs font-bold text-[#14532d] mb-1.5">
-                Select Your Agricultural Role
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRole('farmer')}
-                  className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
-                    role === 'farmer' 
-                      ? 'bg-[#14532d] text-white border-[#14532d] shadow-xs' 
-                      : 'bg-[#fbfdfb] text-[#496552] border-[#d8e5da] hover:bg-gray-50'
-                  }`}
-                >
-                  <Tractor className="h-4 w-4" />
-                  <span className="text-[11px] font-bold">Farmer</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRole('laborer')}
-                  className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
-                    role === 'laborer' 
-                      ? 'bg-[#14532d] text-white border-[#14532d] shadow-xs' 
-                      : 'bg-[#fbfdfb] text-[#496552] border-[#d8e5da] hover:bg-gray-50'
-                  }`}
-                >
-                  <Sprout className="h-4 w-4" />
-                  <span className="text-[11px] font-bold">Laborer</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRole('admin')}
-                  className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
-                    role === 'admin' 
-                      ? 'bg-[#14532d] text-white border-[#14532d] shadow-xs' 
-                      : 'bg-[#fbfdfb] text-[#496552] border-[#d8e5da] hover:bg-gray-50'
-                  }`}
-                >
-                  <Building className="h-4 w-4" />
-                  <span className="text-[11px] font-bold">Mandi Admin</span>
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-[#14532d] via-[#15803d] to-[#16a34a] hover:brightness-110 text-white py-3 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-75"
+            className={`w-full py-3 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-75 ${
+              role === 'admin' 
+                ? 'bg-gradient-to-r from-[#78350f] via-[#92400e] to-[#b45309] text-white hover:brightness-110' 
+                : 'bg-gradient-to-r from-[#14532d] via-[#15803d] to-[#16a34a] text-white hover:brightness-110'
+            }`}
           >
             {loading ? (
               <div className="h-4 w-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
             ) : (
               <>
-                <span>{isLogin ? 'Sign In Instantly' : 'Complete Registration'}</span>
+                <span>
+                  {isLogin 
+                    ? `Sign In as ${role === 'farmer' ? 'Farmer (Kisan Portal)' : role === 'laborer' ? 'Laborer (Shramik Portal)' : 'Mandi APMC Admin'}` 
+                    : `Create ${role === 'farmer' ? 'Farmer' : role === 'laborer' ? 'Laborer' : 'Admin'} Profile`}
+                </span>
                 <ArrowRight className="h-4 w-4" />
               </>
             )}
@@ -690,7 +893,7 @@ export default function Login() {
         </form>
 
         {/* Divider */}
-        <div className="relative my-5">
+        <div className="relative my-4">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-[#d8e5da]"></div>
           </div>
@@ -724,14 +927,14 @@ export default function Login() {
               d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
             />
           </svg>
-          <span>Sign In with Google</span>
+          <span>Sign In with Google ({role === 'farmer' ? 'Farmer' : role === 'laborer' ? 'Laborer' : 'Admin'})</span>
         </button>
 
-        {/* Instant 1-Click Demo Profiles */}
-        <div className="mt-5 pt-4 border-t border-[#e9efe9]">
+        {/* Instant 1-Click Fast Preview Profiles */}
+        <div className="mt-4 pt-3 border-t border-[#e9efe9]">
           <span className="block text-[11px] font-bold text-center text-[#496552] mb-2 flex items-center justify-center gap-1.5">
             <Zap className="h-3.5 w-3.5 text-amber-600" />
-            <span>Instant Demo Sign-In (1-Click Preview)</span>
+            <span>Instant Role Logins (1-Click Evaluation)</span>
           </span>
           <div className="grid grid-cols-3 gap-2">
             <button
@@ -751,7 +954,7 @@ export default function Login() {
             <button
               type="button"
               onClick={() => handleQuickDemo('admin')}
-              className="py-1.5 px-2 bg-[#f4f8f4] hover:bg-[#eaf4ea] border border-[#d2e2d5] rounded-xl text-[11px] font-bold text-[#14532d] transition"
+              className="py-1.5 px-2 bg-[#fffbeb] hover:bg-[#fef3c7] border border-amber-300 rounded-xl text-[11px] font-bold text-amber-900 transition"
             >
               🏛️ Mandi Admin
             </button>
